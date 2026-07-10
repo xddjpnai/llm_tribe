@@ -27,6 +27,7 @@ class ToolContext:
     workspace: Path        # общий git-репозиторий (ветка агента)
     private: Path          # приватная папка агента (недоступна другим)
     selfmod_api_url: str
+    sage_url: str          # мудрец: вердикт при submit_result
     http: httpx.Client
     audit: Callable[..., None]   # events.Bus.audit
 

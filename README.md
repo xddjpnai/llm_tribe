@@ -12,6 +12,9 @@
 - `budget-guard` — единственный доступ к LLM (ключи только здесь); клампит `max_tokens`
   на вызов = рамка на одно действие. Общий расход отслеживает владелец сам.
 - `selfmod-api` — патч → тест в песочнице → применение. Единственный с docker.sock.
+- `sage` — мудрец/судья общины: при `submit_result` независимо воспроизводит артефакт
+  из ветки агента + LLM-оценка (другой вендор); агент не может сам объявить задачу
+  решённой. Неизменяем агентами (protect.py).
 - `redis` — общее состояние (события, очередь задач, трейсы).
 - `secrets/credentials.env` — креды и владельцы. `configs/initial_tasks.yaml` — 3 задачи.
 
@@ -33,6 +36,8 @@
   `GET /v1/budget` (накопитель + рамка на вызов).
 - selfmod-api: `POST /v1/patch` — `{agent_id, target: workspace|agent, diff}` →
   `{accepted, tests_passed, rebuilt, logs}`; защищённые пути отклоняются.
+- sage: `POST /v1/judge` — `{task_id, statement, summary, artifact_ref, branch}` →
+  `{verdict: solved|unsolved, quality, reproducible, reason}`.
 
 ## Redis-конвенции (их использует агент-построенный журнал/канал)
 

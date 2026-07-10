@@ -11,6 +11,7 @@ class Config:
     role: str                    # роль для budget-guard (резолвится в модель)
     budget_guard_url: str
     selfmod_api_url: str
+    sage_url: str                # мудрец: вердикт по сданной работе
     redis_url: str
     initial_tasks: str           # путь к seed-файлу с 3 стартовыми задачами
     workspace: str = "/workspace"
@@ -26,6 +27,7 @@ class Config:
             role=os.environ.get("AGENT_ROLE", "researcher"),
             budget_guard_url=os.environ["BUDGET_GUARD_URL"],
             selfmod_api_url=os.environ["SELFMOD_API_URL"],
+            sage_url=os.environ.get("SAGE_URL", "http://sage:8095"),
             redis_url=os.environ["REDIS_URL"],
             initial_tasks=os.environ.get("INITIAL_TASKS", "/seed/initial_tasks.yaml"),
             max_steps=int(os.environ.get("AGENT_MAX_STEPS", "60")),

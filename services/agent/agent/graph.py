@@ -35,9 +35,14 @@ provided tool path (budget-guard); you have no provider keys yourself.
 
 Before you RELY on new code you wrote (a tool, a deploy, a change to how you operate),
 validate it with propose_self_modification, which tests the patch in an isolated sandbox
-before applying — so a broken change can't take you down. There is no external judge:
-verify your own results with run_python. Be economical with the budget and don't burn
-steps narrating — act. Call submit_result when the task is done."""
+before applying — so a broken change can't take you down.
+
+Your work is judged by the sage — the community's impartial elder (a different model). When
+you call submit_result, the sage independently re-runs your artifact and rates it: you
+cannot mark a task solved on your own. So BEFORE submitting, verify with run_python AND
+git_commit your artifact to your branch (the sage reproduces from there). If the sage
+returns unsolved, it tells you why — fix it and submit again. Be economical with the budget
+and don't burn steps narrating — act."""
 
 
 # NB: аннотации в этом классе — не PEP604 (`X | None`), а typing.Optional/List/Dict.
@@ -52,6 +57,20 @@ class AgentState:
     done: bool = False
     submission: Optional[Dict[str, Any]] = None
     stop_reason: str = ""
+
+
+def _consult_sage(tctx: ToolContext, task: dict, summary: str, artifact: str, branch: str) -> dict:
+    """Спросить вердикт у мудреца. При недоступности — считаем unsolved (агент
+    не может сам себя объявить решившим в обход судьи)."""
+    try:
+        r = tctx.http.post(f"{tctx.sage_url}/v1/judge", json={
+            "task_id": tctx.task_id, "statement": task.get("statement", ""),
+            "summary": summary, "artifact_ref": artifact, "branch": branch}, timeout=200)
+        r.raise_for_status()
+        return r.json()
+    except Exception as e:  # noqa: BLE001
+        return {"verdict": "unsolved", "quality": 0.0, "reproducible": False,
+                "reason": f"sage недоступен: {e}"}
 
 
 def build_graph(llm: LLMClient, tctx: ToolContext, bus, max_steps: int):
@@ -92,13 +111,23 @@ def build_graph(llm: LLMClient, tctx: ToolContext, bus, max_steps: int):
                       detail=json.dumps(args, ensure_ascii=False)[:500])
 
             if name == "submit_result":
-                state.submission = {
-                    "summary": args.get("summary", ""),
-                    "artifact_path": args.get("artifact_path", ""),
-                    "branch": f"agent/{tctx.agent_id}",
-                }
-                state.done, state.stop_reason = True, "submitted"
-                result = "__SUBMITTED__"
+                summary = args.get("summary", "")
+                artifact = args.get("artifact_path", "")
+                branch = f"agent/{tctx.agent_id}"
+                verdict = _consult_sage(tctx, state.task, summary, artifact, branch)
+                bus.emit("verdict", {"task_id": task_id, **verdict})
+                if verdict.get("verdict") == "solved":
+                    state.submission = {"summary": summary, "artifact_path": artifact,
+                                        "branch": branch, "verdict": verdict}
+                    state.done, state.stop_reason = True, "solved"
+                    result = f"SAGE: solved (quality={verdict.get('quality')}). {verdict.get('reason','')}"
+                else:
+                    # мудрец завернул работу — вернуть причину, дать доработать
+                    result = (f"SAGE VERDICT: unsolved (quality={verdict.get('quality')}, "
+                              f"reproducible={verdict.get('reproducible')}).\n"
+                              f"Reason: {verdict.get('reason','')}\n"
+                              f"Fix the issue and submit again, or improve your artifact "
+                              f"(commit it to your branch first so the sage can reproduce it).")
             else:
                 result = execute(tctx, name, args)
 

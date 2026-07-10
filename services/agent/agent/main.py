@@ -30,7 +30,8 @@ def _toolctx(cfg: Config, task_id: str | None, http: httpx.Client, bus: Bus) -> 
     return ToolContext(
         agent_id=cfg.agent_id, task_id=task_id,
         workspace=Path(cfg.workspace), private=Path(cfg.private),
-        selfmod_api_url=cfg.selfmod_api_url, http=http, audit=bus.audit,
+        selfmod_api_url=cfg.selfmod_api_url, sage_url=cfg.sage_url,
+        http=http, audit=bus.audit,
     )
 
 

@@ -31,6 +31,7 @@ x-agent-base: &agent-base
   environment: &agent-env
     BUDGET_GUARD_URL: http://budget-guard:8080   # единственный доступ к LLM
     SELFMOD_API_URL: http://selfmod-api:8090      # патч → песочница → применение
+    SAGE_URL: http://sage:8095                    # мудрец: вердикт по сданной работе
     REDIS_URL: redis://redis:6379/0
     INITIAL_TASKS: /seed/initial_tasks.yaml
     # ресурс «канал связи»: агент сам строит бота на этом токене
@@ -85,6 +86,23 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./services/agent:/build_context/agent
       - workspace:/workspace
+    deploy:
+      resources:
+        limits: { cpus: "1.0", memory: 1G }
+
+  # Мудрец: независимый судья общины. Воспроизводит артефакт из ветки агента +
+  # LLM-оценка (роль sage = другой вендор). Агентами не изменяем (protect.py).
+  sage:
+    build: ./services/sage
+    restart: unless-stopped
+    networks: [net]
+    environment:
+      BUDGET_GUARD_URL: http://budget-guard:8080
+      REDIS_URL: redis://redis:6379/0
+      WORKSPACE: /workspace
+    volumes:
+      - workspace:/workspace:ro
+    depends_on: [budget-guard, redis]
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1G }

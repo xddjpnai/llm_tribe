@@ -64,3 +64,6 @@ roles:
   comms:                        # разбор текста для агент-построенного канала связи
     primary: deepseek-v4-flash
     fallbacks: [kimi-k2.6]
+  sage:                         # судья: другой вендор, чем агенты (не предвзят к их модели)
+    primary: claude-sonnet-5
+    fallbacks: [deepseek-v4-pro]
