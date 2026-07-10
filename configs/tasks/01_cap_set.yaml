@@ -2,7 +2,7 @@
 # Остальные поля (verification, budget_rationale) — документация для человека.
 id: cap_set_construction
 kind: maximize
-cap_usd: 15
+cap_usd: 4
 
 statement: |
   Construct the largest possible cap set in F_3^n (the flagship FunSearch domain)

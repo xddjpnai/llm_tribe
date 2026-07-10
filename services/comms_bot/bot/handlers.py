@@ -1,49 +1,41 @@
-"""Разбор и диспетчеризация команд. Чистая логика (сеть — через объект services),
-поэтому тестируется целиком офлайн.
+"""ИЗМЕНЯЕМЫЕ обработчики команд (агенты вправе их эволюционировать).
 
-Auth: команды и добавление задач принимаются ТОЛЬКО от TELEGRAM_ADMIN_USER_ID
-(guard: только я могу ставить задачи и дёргать kill-switch). От остальных —
-молчаливое игнорирование (None), чтобы не раскрывать поверхность посторонним.
+Сюда попадают ТОЛЬКО уже аутентифицированные пользователи и ТОЛЬКО не-защищённые
+команды — проверку участника и защищённые команды (/kill, /user) обрабатывает
+bot/protected.py ДО вызова этого модуля. Поэтому здесь auth-гейта нет намеренно:
+его нельзя ослабить, редактируя этот файл.
 """
 from __future__ import annotations
 
 import shlex
 
+# help — информационный; агент может переформатировать. Защищённые команды всё равно
+# работают независимо от того, упомянуты ли они здесь (их обрабатывает protected.py).
 HELP = (
-    "Команды (только для админа):\n"
-    "/addtask [kind=exact|maximize|open] [cap=<usd>] <постановка>\n"
-    "/pause [all|agent-1|...]   — пауза агента или всех\n"
-    "/stop  [all|agent-1|...]   — остановка (kill-switch)\n"
+    "Команды:\n"
     "/status                    — состояние очереди и агентов\n"
     "/budget                    — расход бюджета (LLM + сервер)\n"
     "/journal [task_id]         — бортовой журнал\n"
+    "/addtask [kind=exact|maximize|open] [cap=<usd>] <постановка>\n"
+    "/kill [all|agent-1|...]    — kill-switch (стоп)\n"
+    "/pause [all|agent-1|...]   — пауза\n"
+    "/resume [all|agent-1|...]  — снять паузу\n"
+    "/user add|remove <id> | list — управление доступом (только владелец)\n"
     "/help"
 )
 
 
-def handle_command(text: str, user_id: int, admin_id: int, services) -> str | None:
-    """Возвращает текст ответа, либо None если отвечать не нужно (не команда /
-    не авторизован)."""
-    text = (text or "").strip()
-    if not text.startswith("/"):
-        return None
-    if user_id != admin_id:
-        return None  # молчаливое игнорирование постороннего
-
-    parts = text.split(maxsplit=1)
-    cmd = parts[0].lstrip("/").lower().split("@")[0]   # убрать @botname
+def handle_command(text: str, user_id: int, services) -> str | None:
+    """Обрабатывает НЕ-защищённые команды аутентифицированного пользователя.
+    Возвращает текст ответа или None."""
+    parts = text.strip().split(maxsplit=1)
+    cmd = parts[0].lstrip("/").lower().split("@")[0]
     rest = parts[1] if len(parts) > 1 else ""
-
     try:
         if cmd == "help":
             return HELP
         if cmd == "addtask":
             return _add_task(rest, services)
-        if cmd in ("pause", "stop"):
-            target = (rest.strip() or "all")
-            action = "pause" if cmd == "pause" else "stop"
-            res = services.kill(target, action)
-            return f"kill-switch: {action} -> {target}\n{res}"
         if cmd == "status":
             return _fmt_status(services.status())
         if cmd == "budget":
@@ -51,7 +43,7 @@ def handle_command(text: str, user_id: int, admin_id: int, services) -> str | No
         if cmd == "journal":
             return services.journal(rest.strip() or None)
         return f"неизвестная команда: /{cmd}\n{HELP}"
-    except Exception as e:  # noqa: BLE001 — вернуть админу, не падать
+    except Exception as e:  # noqa: BLE001 — вернуть пользователю, не падать
         return f"ошибка выполнения /{cmd}: {type(e).__name__}: {e}"
 
 

@@ -1,6 +1,6 @@
 id: sorting_network_min_comparators
 kind: maximize
-cap_usd: 12
+cap_usd: 3
 
 statement: |
   Find sorting networks with as few comparators as possible for n = 9, 10, 11, 12

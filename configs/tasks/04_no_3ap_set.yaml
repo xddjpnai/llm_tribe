@@ -1,6 +1,6 @@
 id: largest_no_3ap_set
 kind: maximize
-cap_usd: 10
+cap_usd: 2
 
 statement: |
   For each N in {256, 512, 1024, 2048}, find the largest subset S of {0,1,...,N-1}

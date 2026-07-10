@@ -1,4 +1,5 @@
 .env
+secrets/credentials.env
 eval/.venv/
 eval/eval_results.json
 __pycache__/

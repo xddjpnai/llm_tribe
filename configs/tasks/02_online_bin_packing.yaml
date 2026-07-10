@@ -1,6 +1,6 @@
 id: online_bin_packing_heuristic
 kind: maximize
-cap_usd: 12
+cap_usd: 3
 
 statement: |
   Discover a scoring heuristic for ONLINE bin packing (items arrive one at a time,

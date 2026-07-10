@@ -20,7 +20,7 @@ from typing import Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from . import apply, events
+from . import apply, events, protect
 from .isolate import DockerRunner, Runner
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -74,6 +74,17 @@ def patch(req: PatchRequest) -> PatchResponse:
     patch_id = uuid.uuid4().hex[:12]
     events.audit(req.agent_id, req.task_id or "", "selfmod_received",
                  f"{req.target}: {req.description[:200]}")
+
+    # защита: kill-switch, управление доступом, auth, креды, деньги — неизменяемы
+    protected = protect.blocked_path(req.diff)
+    if protected:
+        events.journal(req.agent_id, "selfmod_blocked_protected",
+                       f"{patch_id}: отклонён — защищённый путь {protected}")
+        events.audit(req.agent_id, req.task_id or "", "selfmod_blocked", protected)
+        return PatchResponse(accepted=False, patch_id=patch_id, tests_passed=False,
+                             rebuilt=False,
+                             logs=f"патч отклонён: путь '{protected}' защищён от "
+                                  f"самомодификации (kill-switch/доступ/креды/деньги)")
 
     source = AGENT_SRC if req.target == "agent" else WORKSPACE
     if not source.exists():

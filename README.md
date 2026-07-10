@@ -2,17 +2,22 @@
 
 Мульти-агентная система для автономного решения исследовательских задач в домене
 program search / алгоритмического открытия. Один VPS (8 vCPU / 32 GB), docker-compose,
-все LLM — через hosted API за budget-guard прокси. Общий бюджет $250 (LLM + сервер).
+все LLM — через hosted API за budget-guard прокси. Страховочный потолок $100 (LLM +
+сервер); пополнение API — на владельце, реальный контроль — жёсткие капы.
 
 ## Структура репозитория
 
 ```
 .
 ├── docker-compose.yml        # весь стек: агенты, инфра, защитные сервисы
-├── .env.example              # шаблон секретов (API-ключи, Telegram)
+├── secrets/
+│   └── credentials.env.example  # ЕДИНСТВЕННЫЙ файл секретов + владельцы (только владелец редактирует)
+├── scripts/
+│   ├── compose.sh            # docker compose с передачей файла кредов
+│   ├── kill.sh / status.sh   # kill-switch и статус через localhost-порт оркестратора
 ├── configs/
 │   ├── model_routing.yaml    # роль → модель + fallback-цепочки + цены (для budget-guard)
-│   ├── budget.yaml           # лимиты: общий $250, per-task, per-agent, пороги троттлинга
+│   ├── budget.yaml           # лимиты: потолок $100, per-task/agent/request, пороги
 │   └── tasks/                # сид-очередь исследовательских задач (yaml на задачу)
 ├── services/
 │   ├── orchestrator/         # LangGraph: очередь задач (state machine) + kill-switch API
@@ -50,3 +55,21 @@ program search / алгоритмического открытия. Один VPS
 6. Каждое действие агента пишется в ClickHouse с таймстампом и agent-ID.
 7. Fallback между провайдерами задан в configs/model_routing.yaml.
 8. Kill-switch: эндпоинт оркестратора + команда в Telegram-боте.
+9. **Неизменяемое ядро.** selfmod-api отклоняет любой патч агента к защищённым путям
+   (kill-switch, управление доступом `/user`, auth, креды, деньги, сам механизм
+   защиты) — см. `services/selfmod_api/selfmod/protect.py`. Всё остальное агенты
+   менять могут.
+10. **Доступ и владельцы.** Все секреты и список владельцев — в одном файле
+   `secrets/credentials.env` (git-ignored, `chmod 600`, не монтируется в контейнеры
+   агентов). Владельцы (`TELEGRAM_OWNER_IDS`) имеют полный доступ; участники
+   добавляются владельцем через `/user` (хранятся на bot-only volume). Бот проверяет
+   пользователя на каждой команде — посторонние игнорируются.
+
+## Управление через Telegram
+
+- **Все участники:** `/status`, `/budget`, `/journal [task_id]`, `/addtask …`,
+  `/kill [target]`, `/pause`, `/resume`.
+- **Только владелец:** `/user add <id>` / `/user remove <id>` / `/user list` —
+  делится доступом. Владельца из кредов через `/user` убрать нельзя (не запрёшь себя).
+- `/kill` и `/user` реализованы в защищённом ядре и агентами не изменяемы; остальные
+  команды и формат уведомлений агенты вправе эволюционировать.

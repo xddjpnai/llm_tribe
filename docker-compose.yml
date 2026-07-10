@@ -27,6 +27,7 @@ volumes:
   agent3_private:
   workspace:          # общий git-репозиторий коллегии (ветка на агента, мержи через арбитра)
   journal_data:       # markdown бортового журнала
+  authz_data:         # список участников бота (/user); монтируется ТОЛЬКО в comms-bot
   redpanda_data:
   redis_data:
   clickhouse_data:
@@ -217,12 +218,15 @@ services:
     networks: [control_net, egress_net]   # egress: api.telegram.org
     environment:
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
-      TELEGRAM_ADMIN_USER_ID: ${TELEGRAM_ADMIN_USER_ID}
+      TELEGRAM_OWNER_IDS: ${TELEGRAM_OWNER_IDS}   # владельцы из кредов (полный доступ)
+      AUTHZ_STORE: /authz/members.json            # участники из /user — на bot-only volume
       KAFKA_BROKERS: redpanda:9092
       REDIS_URL: redis://redis:6379/0
       ORCHESTRATOR_URL: http://orchestrator:8000
       JOURNAL_URL: http://journal:8050
       BUDGET_GUARD_URL: http://budget-guard:8080
+    volumes:
+      - authz_data:/authz                         # список участников; агенты его НЕ монтируют
     depends_on: [redpanda, orchestrator]
     deploy:
       resources:

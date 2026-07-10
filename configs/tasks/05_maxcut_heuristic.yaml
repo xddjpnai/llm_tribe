@@ -1,6 +1,6 @@
 id: maxcut_local_search
 kind: maximize
-cap_usd: 8
+cap_usd: 2
 
 statement: |
   Design a fast local-search heuristic for MAX-CUT on a fixed benchmark of small-to-
