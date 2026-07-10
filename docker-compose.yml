@@ -218,6 +218,7 @@ services:
       REDIS_URL: redis://redis:6379/0
       ORCHESTRATOR_URL: http://orchestrator:8000
       JOURNAL_URL: http://journal:8050
+      BUDGET_GUARD_URL: http://budget-guard:8080
     depends_on: [redpanda, orchestrator]
     deploy:
       resources:
