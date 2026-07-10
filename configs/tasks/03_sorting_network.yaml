@@ -1,0 +1,22 @@
+id: sorting_network_min_comparators
+kind: maximize
+cap_usd: 12
+
+statement: |
+  Find sorting networks with as few comparators as possible for n = 9, 10, 11, 12
+  inputs. A sorting network is a fixed sequence of compare-exchange operations on
+  wire indices that sorts every input. Match or beat the best known comparator
+  counts (e.g. 25 for n=9, 29 for n=10, 35 for n=11, 39 for n=12).
+
+  Deliverable: `solution.py` exposing `network(n) -> list[tuple[int,int]]` (ordered
+  comparators) and `tests/test_network.py` that validates correctness via the
+  0-1 principle (the network must sort all 2^n binary inputs) and reports the
+  comparator count per n. Document the construction/search method.
+
+verification: >
+  Reproducible: arbiter runs the 0-1 principle check (all 2^n binary vectors sorted)
+  and counts comparators, comparing to known bests. Fully objective, CPU-only;
+  2^12 = 4096 checks is trivial.
+budget_rationale: >
+  ~$12: search over comparator sequences with frequent code-runner validation.
+  Cheap to verify, so budget goes to the agent's search, not re-checking.

@@ -1,0 +1,20 @@
+id: largest_no_3ap_set
+kind: maximize
+cap_usd: 10
+
+statement: |
+  For each N in {256, 512, 1024, 2048}, find the largest subset S of {0,1,...,N-1}
+  containing no 3-term arithmetic progression (no distinct a,b,c in S with
+  a + c = 2b). Beat the naive greedy baseline; Behrend-style constructions are a
+  known strong reference.
+
+  Deliverable: `solution.py` exposing `build_set(N) -> list[int]` and
+  `tests/test_no3ap.py` that verifies the no-3AP property and reports |S| for each N.
+  Document the construction (greedy, Behrend, base-3 / no-carry, or a hybrid).
+
+verification: >
+  Reproducible: arbiter re-checks the no-3AP invariant (O(|S|^2) is fine at these N)
+  and compares |S| to greedy. Objective, CPU-only.
+budget_rationale: >
+  ~$10: mid-difficulty; well-known constructions exist, so a capable agent converges
+  fast. Good early task to calibrate agent quality before the harder cap-set run.

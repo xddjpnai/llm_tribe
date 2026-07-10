@@ -14,6 +14,7 @@ import glob
 import json
 import logging
 import os
+import subprocess
 import threading
 import time
 from typing import Optional
@@ -231,8 +232,32 @@ def _verdict_trace(v: dict) -> None:
         log.warning("verdict trace failed: %s", e)
 
 
+def _ensure_workspace_repo() -> None:
+    """Общий workspace должен быть git-репозиторием: агент коммитит в ветку
+    agent/<id>, арбитр делает git archive. Инициализируем при первом старте."""
+    ws = os.environ.get("WORKSPACE", "/workspace")
+    if os.path.isdir(os.path.join(ws, ".git")):
+        return
+    try:
+        subprocess.run(["git", "init", "-q", "-b", "main", ws], check=True)
+        readme = os.path.join(ws, "README.md")
+        if not os.path.exists(readme):
+            with open(readme, "w") as f:
+                f.write("# llm-tribe shared workspace\n\nОбщее рабочее пространство коллегии. "
+                        "Ветка на агента (agent/<id>), мержи — через арбитра.\n")
+        subprocess.run(["git", "-C", ws, "-c", "user.email=orchestrator@llm-tribe",
+                        "-c", "user.name=orchestrator", "add", "-A"], check=True)
+        subprocess.run(["git", "-C", ws, "-c", "user.email=orchestrator@llm-tribe",
+                        "-c", "user.name=orchestrator", "commit", "-q", "-m", "init workspace"],
+                       check=True)
+        log.info("workspace git-репозиторий инициализирован: %s", ws)
+    except Exception as e:  # noqa: BLE001
+        log.warning("не удалось инициализировать workspace repo: %s", e)
+
+
 @app.on_event("startup")
 def _startup() -> None:
+    _ensure_workspace_repo()
     _load_seeds()
     for fn in (_assignment_loop, _submissions_loop, _verdicts_loop):
         threading.Thread(target=fn, daemon=True).start()

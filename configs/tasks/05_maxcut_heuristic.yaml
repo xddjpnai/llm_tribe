@@ -1,0 +1,21 @@
+id: maxcut_local_search
+kind: maximize
+cap_usd: 8
+
+statement: |
+  Design a fast local-search heuristic for MAX-CUT on a fixed benchmark of small-to-
+  medium graphs (Erdos-Renyi and a few Gset-style instances up to ~800 nodes). The
+  heuristic must run within a per-graph time budget of a few seconds on one CPU core
+  and produce cuts larger than a random-assignment baseline and a plain greedy.
+
+  Deliverable: `solution.py` exposing `max_cut(n, edges) -> list[int]` (a 0/1 label
+  per node) and `tests/test_maxcut.py` that runs your heuristic on the seeded
+  benchmark, checks the time budget, and reports the average cut value vs baselines.
+  Document the move strategy (e.g. randomized greedy + 1-flip / KL-style refinement).
+
+verification: >
+  Reproducible: arbiter replays the seeded graphs, computes cut values, checks the
+  time budget, and compares to baselines. Objective, CPU-only.
+budget_rationale: >
+  ~$8: easiest seed task, deliberately low cap as a warm-up / quality calibration
+  for the collegium before it spends on the harder open searches above.
