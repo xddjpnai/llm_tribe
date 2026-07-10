@@ -26,7 +26,6 @@ volumes:
   agent2_private:
   agent3_private:
   workspace:          # общий git-репозиторий коллегии (ветка на агента, мержи через арбитра)
-  journal_data:       # markdown бортового журнала
   authz_data:         # список участников бота (/user); монтируется ТОЛЬКО в comms-bot
   redpanda_data:
   redis_data:
@@ -226,21 +225,6 @@ services:
     volumes:
       - authz_data:/authz                         # список участников; агенты его НЕ монтируют
     depends_on: [redpanda, orchestrator]
-    deploy:
-      resources:
-        limits: { cpus: "0.25", memory: 384M }
-
-  journal:
-    build: ./services/journal
-    restart: unless-stopped
-    networks: [control_net]
-    environment:
-      BUDGET_GUARD_URL: http://budget-guard:8080
-      KAFKA_BROKERS: redpanda:9092
-      CLICKHOUSE_URL: http://default:${CLICKHOUSE_PASSWORD}@clickhouse:8123
-    volumes:
-      - journal_data:/journal
-    depends_on: [redpanda, budget-guard]
     deploy:
       resources:
         limits: { cpus: "0.25", memory: 384M }
