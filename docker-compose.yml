@@ -178,6 +178,8 @@ services:
     build: ./services/orchestrator
     restart: unless-stopped
     networks: [control_net]
+    ports:
+      - "127.0.0.1:8001:8000"   # локальный доступ для kill-switch/status скриптов (не публичный)
     environment:
       REDIS_URL: redis://redis:6379/0
       KAFKA_BROKERS: redpanda:9092
