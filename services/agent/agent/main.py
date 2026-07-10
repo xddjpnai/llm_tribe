@@ -108,6 +108,7 @@ def main() -> None:
         except Exception as e:  # noqa: BLE001
             log.exception("задача %s упала", task_id)
             bus.emit("tasks.submissions", {"task_id": task_id, "agent_id": cfg.agent_id,
+                     "statement": task.get("statement", ""),
                      "summary": f"agent crashed: {e}", "artifact_ref": "", "branch": "",
                      "failed": True})
             continue
@@ -119,6 +120,7 @@ def main() -> None:
                                    "artifact_path": "", "branch": f"agent/{cfg.agent_id}"}
         bus.emit("tasks.submissions", {
             "task_id": task_id, "agent_id": cfg.agent_id,
+            "statement": task.get("statement", ""),   # арбитру нужна постановка для оценки
             "summary": sub["summary"], "artifact_ref": sub.get("artifact_path", ""),
             "branch": sub.get("branch", ""), "stop_reason": state.stop_reason,
             "cost_usd": round(state.total_cost, 4),

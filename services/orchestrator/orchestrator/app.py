@@ -68,6 +68,15 @@ def emit(topic: str, payload: dict) -> None:
         log.warning("emit %s failed: %s", topic, e)
 
 
+def _register_task_cap(task_id: str, cap: float) -> None:
+    """Сообщить budget-guard фактический cap задачи до старта агента (иначе guard
+    enforce'ил бы дефолт из budget.yaml)."""
+    try:
+        _http.post(f"{GUARD_URL}/v1/task_cap", json={"task_id": task_id, "cap_usd": cap})
+    except Exception as e:  # noqa: BLE001
+        log.warning("register task_cap failed: %s", e)
+
+
 def _remaining_budget() -> float:
     try:
         b = _http.get(f"{GUARD_URL}/v1/budget").json()
@@ -165,6 +174,7 @@ def _assignment_loop() -> None:
                         break
                     task = q.get(tid)
                     if q.assign(tid, agent, cap):
+                        _register_task_cap(tid, cap)   # budget-guard enforce'ит именно этот cap
                         emit("tasks.assignments", {"task_id": tid, "agent_id": agent,
                              "cap_usd": cap, "statement": task.get("statement", ""),
                              "kind": task.get("kind", "open")})

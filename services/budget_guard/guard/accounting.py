@@ -64,6 +64,20 @@ class Accounting:
     def task_spent(self, task_id: str) -> float:
         return float(self.r.get(f"task:{task_id}") or 0.0)
 
+    # ------------------------ per-task cap (регистрирует оркестратор) ------------------------
+    def set_task_cap(self, task_id: str, cap_usd: float) -> None:
+        # cap живёт дольше задачи (TTL сутки), чтобы не потеряться при паузах
+        self.r.set(f"taskcap:{task_id}", str(cap_usd))
+        self.r.expire(f"taskcap:{task_id}", 60 * 60 * 24)
+
+    def get_task_cap(self, task_id: str | None, default: float) -> float:
+        """Фактический cap задачи (конкурентно масштабированный оркестратором) или
+        дефолт из budget.yaml, если оркестратор его не зарегистрировал."""
+        if not task_id:
+            return default
+        v = self.r.get(f"taskcap:{task_id}")
+        return float(v) if v else default
+
     # --------------------------- проверки допуска --------------------------
     def check_admission(self, agent_id: str, task_id: str | None,
                         task_cap: float) -> tuple[bool, str, float]:

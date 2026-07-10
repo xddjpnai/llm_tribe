@@ -2,7 +2,7 @@
 
 Мульти-агентная система для автономного решения исследовательских задач в домене
 program search / алгоритмического открытия. Один VPS (8 vCPU / 32 GB), docker-compose,
-все LLM — через hosted API за budget-guard прокси. Общий бюджет $500 (LLM + сервер).
+все LLM — через hosted API за budget-guard прокси. Общий бюджет $250 (LLM + сервер).
 
 ## Структура репозитория
 
@@ -12,7 +12,7 @@ program search / алгоритмического открытия. Один VPS
 ├── .env.example              # шаблон секретов (API-ключи, Telegram)
 ├── configs/
 │   ├── model_routing.yaml    # роль → модель + fallback-цепочки + цены (для budget-guard)
-│   ├── budget.yaml           # лимиты: общий $500, per-task, per-agent, пороги троттлинга
+│   ├── budget.yaml           # лимиты: общий $250, per-task, per-agent, пороги троттлинга
 │   └── tasks/                # сид-очередь исследовательских задач (yaml на задачу)
 ├── services/
 │   ├── orchestrator/         # LangGraph: очередь задач (state machine) + kill-switch API

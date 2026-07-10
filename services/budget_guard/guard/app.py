@@ -51,6 +51,11 @@ class ChatRequest(BaseModel):
     temperature: Optional[float] = None
 
 
+class TaskCapRequest(BaseModel):
+    task_id: str
+    cap_usd: float
+
+
 def _trace(agent_id: str, task_id: Optional[str], model: str, tin: int, tout: int,
            cost: float, fell_back: bool) -> None:
     if not _ch_url:
@@ -94,9 +99,19 @@ def budget() -> dict:
             "fraction": snap.fraction, "state": snap.state}
 
 
+@app.post("/v1/task_cap")
+def set_task_cap(req: TaskCapRequest) -> dict:
+    """Оркестратор регистрирует фактический (конкурентно масштабированный) cap задачи.
+    budget-guard — авторитет: enforce'ит именно это значение, а не доверяет капу
+    от агента и не берёт всегда дефолт."""
+    acct.set_task_cap(req.task_id, req.cap_usd)
+    return {"ok": True, "task_id": req.task_id, "cap_usd": req.cap_usd}
+
+
 @app.post("/v1/chat")
 def chat(req: ChatRequest):
-    task_cap = limits.per_task_default_cap_usd  # per-task override можно добавить из meta задачи
+    # фактический cap задачи (из /v1/task_cap) либо дефолт из budget.yaml
+    task_cap = acct.get_task_cap(req.task_id, limits.per_task_default_cap_usd)
     ok, reason, retry = acct.check_admission(req.agent_id, req.task_id, task_cap)
     if not ok:
         if reason == "throttle":

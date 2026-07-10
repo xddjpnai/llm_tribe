@@ -42,6 +42,13 @@ fallback и логирует факт.
 - `402` + `{"reason": "task_cap" | "agent_cap" | "hard_stop"}` — лимит исчерпан,
   дальнейшие вызовы для этой задачи/агента запрещены → агент завершает работу.
 
+### POST /v1/task_cap
+Оркестратор регистрирует фактический (конкурентно масштабированный) cap задачи
+до старта агента: `{"task_id":"...","cap_usd": 8.0}` → `{"ok": true, ...}`.
+budget-guard enforce'ит именно это значение в admission-контроле /v1/chat; если
+cap не зарегистрирован — берётся `per_task_default_cap_usd` из budget.yaml.
+budget-guard остаётся авторитетом: капу от агента он не доверяет.
+
 ### GET /v1/budget
 Снимок для дашбордов/оркестратора: `{spent_total_usd, llm_spent_usd,
 server_spent_usd, per_agent: {...}, per_task: {...}, state}`.

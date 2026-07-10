@@ -1,7 +1,7 @@
-# Единый бюджет $500 на ВСЁ: LLM API + аренда сервера.
+# Единый бюджет $250 на ВСЁ: LLM API + аренда сервера.
 # Budget-guard ведёт два счётчика с общим лимитом (guard #1).
 
-total_budget_usd: 500
+total_budget_usd: 250
 
 server:
   # Аренда VPS начисляется как ежедневный accrual: monthly_cost_usd / 30 в день.
