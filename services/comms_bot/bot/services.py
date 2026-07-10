@@ -1,5 +1,7 @@
-"""Обёртки над control-plane сервисами (оркестратор, журнал, budget-guard).
-Изолированы от разбора команд, чтобы handlers тестировались с фейком."""
+"""Обёртки над control-plane сервисами (оркестратор, журнал, budget-guard) для
+ИЗМЕНЯЕМОГО слоя бота. Намеренно НЕТ метода kill — kill доступен только в
+защищённом ядре (bot/protected.py), которое ходит в оркестратор напрямую.
+Так изменяемый слой/LLM-роутер физически не может остановить систему."""
 from __future__ import annotations
 
 import httpx
@@ -19,11 +21,6 @@ class Services:
         r = self._http.post(f"{self._orch}/v1/tasks", json=body)
         r.raise_for_status()
         return r.json().get("task_id", "?")
-
-    def kill(self, target: str, action: str) -> dict:
-        r = self._http.post(f"{self._orch}/v1/kill", json={"target": target, "action": action})
-        r.raise_for_status()
-        return r.json()
 
     def status(self) -> dict:
         r = self._http.get(f"{self._orch}/v1/status")

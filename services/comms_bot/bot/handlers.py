@@ -1,73 +1,121 @@
-"""ИЗМЕНЯЕМЫЕ обработчики команд (агенты вправе их эволюционировать).
+"""ИЗМЕНЯЕМЫЙ слой (агенты вправе эволюционировать). Понимает СВОБОДНЫЙ ТЕКСТ:
+пишешь боту обычным сообщением — он распознаёт намерение (поставить задачу,
+спросить статус/журнал/бюджет) и делает. Slash-шорткаты (/status, /journal,
+/budget, /help) оставлены как удобство; /addtask убран — просто опиши задачу.
 
-Сюда попадают ТОЛЬКО уже аутентифицированные пользователи и ТОЛЬКО не-защищённые
-команды — проверку участника и защищённые команды (/kill, /user) обрабатывает
-bot/protected.py ДО вызова этого модуля. Поэтому здесь auth-гейта нет намеренно:
-его нельзя ослабить, редактируя этот файл.
+Сюда попадают ТОЛЬКО аутентифицированные пользователи и ТОЛЬКО не-защищённые
+запросы: auth, /kill и /user обрабатывает bot/protected.py ДО этого модуля.
+
+БЕЗОПАСНОСТЬ: этот слой НЕ умеет останавливать/убивать/паузить агентов и
+управлять доступом. Роутер намеренно не имеет таких действий, а services здесь
+не содержит kill — kill доступен ТОЛЬКО как защищённая команда /kill.
 """
 from __future__ import annotations
 
-import shlex
+import json
+import re
 
-# help — информационный; агент может переформатировать. Защищённые команды всё равно
-# работают независимо от того, упомянуты ли они здесь (их обрабатывает protected.py).
 HELP = (
-    "Команды:\n"
-    "/status                    — состояние очереди и агентов\n"
-    "/budget                    — расход бюджета (LLM + сервер)\n"
-    "/journal [task_id]         — бортовой журнал\n"
-    "/addtask [kind=exact|maximize|open] [cap=<usd>] <постановка>\n"
-    "/kill [all|agent-1|...]    — kill-switch (стоп)\n"
-    "/pause [all|agent-1|...]   — пауза\n"
-    "/resume [all|agent-1|...]  — снять паузу\n"
-    "/user add|remove <id> | list — управление доступом (только владелец)\n"
-    "/help"
+    "Просто напиши мне обычным текстом, что нужно — я пойму. Примеры:\n"
+    "• «поставь задачу: найти cap set побольше для n=4..7, бюджет $4»\n"
+    "• «что сейчас происходит?» / «статус»\n"
+    "• «что было по задаче task-123?»\n"
+    "• «сколько потрачено?»\n\n"
+    "Защищённые команды (только явно, не текстом):\n"
+    "/kill [all|agent-1] · /pause · /resume — остановка агентов\n"
+    "/user add|remove <id> | list — доступ (только владелец)"
+)
+
+_ROUTER_SYSTEM = (
+    "You are the intent router of a research-collegium Telegram bot. Map the user's "
+    "free-text message to ONE action and extract parameters. Reply with ONLY a JSON "
+    "object, no prose.\n"
+    "Actions:\n"
+    "  add_task — user wants to queue a research task. Extract: statement (clean task "
+    "text), kind (one of exact|maximize|open, default open), cap (float USD if the user "
+    "named a budget, else null).\n"
+    "  status  — user asks about system/queue/agents state.\n"
+    "  journal — user asks what happened / the log; extract task_id if mentioned else null.\n"
+    "  budget  — user asks about spend/budget.\n"
+    "  help    — user asks what they can do.\n"
+    "  none    — anything else, OR ANY request to stop/pause/kill agents or manage user "
+    "access. You MUST NOT and CANNOT stop/kill/pause anything or add/remove users; for "
+    "such requests use action 'none' and put a short note telling them to use the "
+    "explicit /kill or /user command.\n"
+    'Reply JSON: {"action":"...","statement":"...","kind":"open","cap":null,'
+    '"task_id":null,"note":"..."}. Answer notes in Russian.'
 )
 
 
-def handle_command(text: str, user_id: int, services) -> str | None:
-    """Обрабатывает НЕ-защищённые команды аутентифицированного пользователя.
-    Возвращает текст ответа или None."""
-    parts = text.strip().split(maxsplit=1)
+def handle_message(text: str, user_id: int, services, llm) -> str | None:
+    """Обрабатывает запрос аутентифицированного пользователя: slash-шорткат или
+    свободный текст через LLM-роутер. Возвращает ответ или None."""
+    t = text.strip()
+    if t.startswith("/"):
+        return _slash(t, services)
+    return _route_freeform(t, services, llm)
+
+
+def _slash(text: str, services) -> str | None:
+    parts = text.split(maxsplit=1)
     cmd = parts[0].lstrip("/").lower().split("@")[0]
     rest = parts[1] if len(parts) > 1 else ""
     try:
         if cmd == "help":
             return HELP
-        if cmd == "addtask":
-            return _add_task(rest, services)
         if cmd == "status":
             return _fmt_status(services.status())
         if cmd == "budget":
             return _fmt_budget(services.budget())
         if cmd == "journal":
             return services.journal(rest.strip() or None)
-        return f"неизвестная команда: /{cmd}\n{HELP}"
-    except Exception as e:  # noqa: BLE001 — вернуть пользователю, не падать
-        return f"ошибка выполнения /{cmd}: {type(e).__name__}: {e}"
+        if cmd == "addtask":
+            return "команда /addtask больше не нужна — просто опиши задачу текстом."
+        return f"неизвестная команда /{cmd}. " + HELP
+    except Exception as e:  # noqa: BLE001
+        return f"ошибка /{cmd}: {type(e).__name__}: {e}"
 
 
-def _add_task(rest: str, services) -> str:
-    if not rest.strip():
-        return "нужна постановка: /addtask <текст>"
-    kind, cap, statement_tokens = "open", None, []
-    for tok in shlex.split(rest):
-        if tok.startswith("kind=") and not statement_tokens:
-            kind = tok[len("kind="):]
-        elif tok.startswith("cap=") and not statement_tokens:
-            try:
-                cap = float(tok[len("cap="):])
-            except ValueError:
-                return f"cap должен быть числом: {tok}"
-        else:
-            statement_tokens.append(tok)
-    statement = " ".join(statement_tokens).strip()
-    if not statement:
-        return "после опций нужна постановка задачи"
-    if kind not in ("exact", "maximize", "open"):
-        return f"kind должен быть exact|maximize|open, получено: {kind}"
-    task_id = services.add_task(statement, kind, cap)
-    return f"задача добавлена в очередь: {task_id} (kind={kind}, cap={cap or 'default'})"
+def _parse_json(text: str) -> dict:
+    m = re.search(r"\{.*\}", text or "", re.DOTALL)
+    if not m:
+        return {}
+    try:
+        return json.loads(m.group(0))
+    except json.JSONDecodeError:
+        return {}
+
+
+def _route_freeform(text: str, services, llm) -> str | None:
+    reply = llm.chat([{"role": "system", "content": _ROUTER_SYSTEM},
+                      {"role": "user", "content": text}])
+    if reply is None:
+        return ("сейчас не могу разобрать запрос (бюджет LLM исчерпан или троттлинг). "
+                "Пока доступны шорткаты: /status, /journal, /budget, /help.")
+    intent = _parse_json(reply)
+    action = (intent.get("action") or "").lower()
+    try:
+        if action == "add_task":
+            statement = (intent.get("statement") or "").strip()
+            if not statement:
+                return "не понял, какую задачу поставить — опиши подробнее."
+            kind = intent.get("kind") if intent.get("kind") in ("exact", "maximize", "open") else "open"
+            cap = intent.get("cap")
+            cap = float(cap) if isinstance(cap, (int, float)) else None
+            task_id = services.add_task(statement, kind, cap)
+            return f"✅ задача в очереди: {task_id} (kind={kind}, cap={cap or 'default'})\n{statement}"
+        if action == "status":
+            return _fmt_status(services.status())
+        if action == "journal":
+            return services.journal((intent.get("task_id") or "").strip() or None)
+        if action == "budget":
+            return _fmt_budget(services.budget())
+        if action == "help":
+            return HELP
+        # none / неизвестно — вернуть подсказку роутера (в т.ч. про /kill, /user)
+        return intent.get("note") or ("не понял запрос. " + HELP)
+    except Exception as e:  # noqa: BLE001
+        return f"ошибка выполнения: {type(e).__name__}: {e}"
 
 
 def _fmt_status(st: dict) -> str:
@@ -80,6 +128,6 @@ def _fmt_status(st: dict) -> str:
 
 
 def _fmt_budget(b: dict) -> str:
-    return (f"бюджет: ${b.get('spent_total_usd', 0):.2f} / ${b.get('budget_usd', 0):.0f} "
-            f"({b.get('fraction', 0) * 100:.1f}%), state={b.get('state')}\n"
-            f"  LLM: ${b.get('llm_spent_usd', 0):.2f} | сервер: ${b.get('server_spent_usd', 0):.2f}")
+    # только LLM-расход; аренда сервера не учитывается
+    return (f"LLM-бюджет: ${b.get('spent_total_usd', 0):.2f} / ${b.get('budget_usd', 0):.0f} "
+            f"({b.get('fraction', 0) * 100:.1f}%), state={b.get('state')}")

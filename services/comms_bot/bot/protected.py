@@ -97,16 +97,21 @@ def _handle_kill(cmd: str, rest: str) -> str:
 
 
 def dispatch(text: str, uid: int, cmd: str, rest: str) -> tuple[bool, str | None]:
-    """Единая точка контроля, вызывается ДО изменяемых обработчиков.
+    """Единая точка контроля, вызывается ДО изменяемых обработчиков / роутера.
     Возвращает (handled, reply):
-      - не участник           -> (True, None)  — молчаливое игнорирование, дальше не идём
-      - protected-команда     -> (True, reply) — обработана здесь
-      - обычная команда       -> (False, None) — вызывающий передаёт в изменяемый handlers
+      - не участник               -> (True, None)  — молчаливое игнорирование, дальше не идём
+      - ЯВНАЯ slash protected-cmd -> (True, reply) — обработана здесь
+      - всё остальное             -> (False, None) — вызывающий передаёт в изменяемый слой
+
+    ВАЖНО: kill/user срабатывают ТОЛЬКО как явные slash-команды (/kill, /user).
+    Свободный текст «останови агентов» / «kill» сюда НЕ попадает как команда —
+    он уходит в изменяемый роутер, который kill НЕ умеет (защита сохранена).
     """
     if not is_member(uid):
         return True, None
-    if cmd in ("kill", "stop", "pause", "resume"):
-        return True, _handle_kill(cmd, rest)
-    if cmd == "user":
-        return True, _handle_user(uid, rest)
+    if text.strip().startswith("/"):
+        if cmd in ("kill", "stop", "pause", "resume"):
+            return True, _handle_kill(cmd, rest)
+        if cmd == "user":
+            return True, _handle_user(uid, rest)
     return False, None

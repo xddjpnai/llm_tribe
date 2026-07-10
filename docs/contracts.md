@@ -50,8 +50,8 @@ cap не зарегистрирован — берётся `per_task_default_cap
 budget-guard остаётся авторитетом: капу от агента он не доверяет.
 
 ### GET /v1/budget
-Снимок для дашбордов/оркестратора: `{spent_total_usd, llm_spent_usd,
-server_spent_usd, per_agent: {...}, per_task: {...}, state}`.
+Снимок для дашбордов/оркестратора: `{spent_total_usd, llm_spent_usd, budget_usd,
+fraction, state}`. Считается только LLM-расход (аренда сервера не учитывается).
 
 ## selfmod-api (реализация — шаг 5)
 

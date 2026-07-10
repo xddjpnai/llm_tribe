@@ -42,7 +42,6 @@ class Routing:
 @dataclass
 class BudgetLimits:
     total_budget_usd: float
-    server_monthly_usd: float
     per_task_default_cap_usd: float
     per_agent_daily_cap_usd: float
     per_request_cap_usd: float
@@ -70,7 +69,6 @@ def load_budget(path: str = "/configs/budget.yaml") -> BudgetLimits:
     override = os.environ.get("BUDGET_TOTAL_USD")
     return BudgetLimits(
         total_budget_usd=float(override) if override else float(raw["total_budget_usd"]),
-        server_monthly_usd=float(raw["server"]["monthly_cost_usd"]),
         per_task_default_cap_usd=float(llm["per_task_default_cap_usd"]),
         per_agent_daily_cap_usd=float(llm["per_agent_daily_cap_usd"]),
         per_request_cap_usd=float(llm["per_request_cap_usd"]),

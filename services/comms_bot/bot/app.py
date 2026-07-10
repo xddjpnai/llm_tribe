@@ -11,6 +11,7 @@ import threading
 import time
 
 from . import handlers, protected
+from .llm import LLMClient
 from .notifications import should_notify
 from .services import Services
 from .telegram import TelegramClient
@@ -29,7 +30,7 @@ def _parse(text: str) -> tuple[str, str]:
     return cmd, rest
 
 
-def command_loop(tg: TelegramClient, services: Services) -> None:
+def command_loop(tg: TelegramClient, services: Services, llm: LLMClient) -> None:
     log.info("command loop started; владельцы: %s", sorted(protected.OWNER_IDS))
     while True:
         try:
@@ -37,22 +38,25 @@ def command_loop(tg: TelegramClient, services: Services) -> None:
                 msg = upd.get("message") or upd.get("edited_message")
                 if not msg:
                     continue
-                text = msg.get("text", "")
-                if not text.startswith("/"):
+                text = (msg.get("text") or "").strip()
+                if not text:
                     continue
                 user_id = msg.get("from", {}).get("id")
                 chat_id = msg.get("chat", {}).get("id")
                 cmd, rest = _parse(text)
 
-                # 1) ЗАЩИЩЁННЫЙ гейт: auth + protected-команды (/kill, /user).
+                # 1) ЗАЩИЩЁННЫЙ гейт: auth + ЯВНЫЕ protected-команды (/kill, /user).
+                #    Не участник -> молча игнор. Свободный текст сюда как команда не
+                #    попадает — kill только через явный /kill.
                 handled, reply = protected.dispatch(text, user_id, cmd, rest)
                 if handled:
                     if reply:
                         tg.send_message(chat_id, reply)
-                    continue  # не участник или protected-команда — в изменяемые не идём
+                    continue
 
-                # 2) изменяемые обработчики (пользователь уже аутентифицирован выше).
-                reply = handlers.handle_command(text, user_id, services)
+                # 2) ИЗМЕНЯЕМЫЙ слой: свободный текст (LLM-роутер) или slash-шорткат.
+                #    Пользователь уже аутентифицирован; kill тут недоступен.
+                reply = handlers.handle_message(text, user_id, services, llm)
                 if reply:
                     tg.send_message(chat_id, reply)
         except Exception as e:  # noqa: BLE001
@@ -87,15 +91,18 @@ def main() -> None:
     if not protected.OWNER_IDS:
         log.error("TELEGRAM_OWNER_IDS пуст — впиши свой Telegram id в secrets/credentials.env")
     tg = TelegramClient(TOKEN)
+    guard_url = os.environ.get("BUDGET_GUARD_URL", "http://budget-guard:8080")
     services = Services(
         orchestrator_url=os.environ["ORCHESTRATOR_URL"],
         journal_url=os.environ["JOURNAL_URL"],
-        budget_guard_url=os.environ.get("BUDGET_GUARD_URL", "http://budget-guard:8080"),
+        budget_guard_url=guard_url,
     )
+    llm = LLMClient(guard_url)
     for owner in sorted(protected.OWNER_IDS):
-        tg.send_message(owner, "🤖 llm-tribe: comms-bot запущен. /help")
+        tg.send_message(owner, "🤖 llm-tribe: comms-bot запущен. Напиши мне текстом, "
+                               "что нужно, или /help.")
     threading.Thread(target=notify_loop, args=(tg,), daemon=True).start()
-    command_loop(tg, services)
+    command_loop(tg, services, llm)
 
 
 if __name__ == "__main__":

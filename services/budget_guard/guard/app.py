@@ -94,9 +94,9 @@ def healthz() -> dict:
 @app.get("/v1/budget")
 def budget() -> dict:
     snap = acct.snapshot()
+    # считаем только LLM; аренда сервера не учитывается (её оплачивает владелец)
     return {"spent_total_usd": snap.total_spent, "llm_spent_usd": snap.llm_spent,
-            "server_spent_usd": snap.server_spent, "budget_usd": snap.total_budget,
-            "fraction": snap.fraction, "state": snap.state}
+            "budget_usd": snap.total_budget, "fraction": snap.fraction, "state": snap.state}
 
 
 @app.post("/v1/task_cap")

@@ -1,11 +1,11 @@
-"""Учёт бюджета в реальном времени (Redis). Два потока расхода, общий лимит.
+"""Учёт бюджета в реальном времени (Redis). Считаем ТОЛЬКО LLM-расход против
+потолка (аренду сервера ты оплачиваешь сам, здесь она не учитывается).
 
-  llm:total            — накопленные траты на LLM API ($)
-  server:start_ts      — момент старта учёта аренды (accrual считается лениво)
+  llm:total            — накопленные траты на LLM API ($) — единственный поток
   agent:{id}:{date}    — суточный расход агента ($)
   task:{id}            — накопленный расход на задачу ($)
 
-state = f(total_spent / total_budget): ok < warn < throttle < hard_stop.
+state = f(llm_spent / total_budget): ok < warn < throttle < hard_stop.
 Инкременты атомарны (INCRBYFLOAT), поэтому конкурентные запросы агентов не гонятся.
 """
 from __future__ import annotations
@@ -19,8 +19,7 @@ from .config import BudgetLimits
 @dataclass
 class BudgetSnapshot:
     llm_spent: float
-    server_spent: float
-    total_spent: float
+    total_spent: float    # == llm_spent (сервер не учитываем), оставлено для совместимости
     total_budget: float
     fraction: float
     state: str            # "ok" | "warn" | "throttle" | "hard_stop"
@@ -30,22 +29,11 @@ class Accounting:
     def __init__(self, redis_client, limits: BudgetLimits):
         self.r = redis_client
         self.limits = limits
-        # зафиксировать старт accrual сервера один раз
-        if not self.r.get("server:start_ts"):
-            self.r.set("server:start_ts", str(time.time()))
-
-    # --------------------------- accrual сервера ---------------------------
-    def server_spent(self) -> float:
-        start = float(self.r.get("server:start_ts") or time.time())
-        days = max(0.0, (time.time() - start) / 86400.0)
-        return round(days * (self.limits.server_monthly_usd / 30.0), 4)
 
     # --------------------------- чтение снимка -----------------------------
     def snapshot(self) -> BudgetSnapshot:
         llm = float(self.r.get("llm:total") or 0.0)
-        server = self.server_spent()
-        total = llm + server
-        frac = total / self.limits.total_budget_usd if self.limits.total_budget_usd else 1.0
+        frac = llm / self.limits.total_budget_usd if self.limits.total_budget_usd else 1.0
         if frac >= self.limits.hard_stop:
             state = "hard_stop"
         elif frac >= self.limits.throttle:
@@ -54,7 +42,7 @@ class Accounting:
             state = "warn"
         else:
             state = "ok"
-        return BudgetSnapshot(round(llm, 4), server, round(total, 4),
+        return BudgetSnapshot(round(llm, 4), round(llm, 4),
                               self.limits.total_budget_usd, round(frac, 4), state)
 
     def agent_daily(self, agent_id: str) -> float:
