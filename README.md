@@ -1,82 +1,65 @@
-# llm-tribe — автономная исследовательская коллегия агентов
+# llm-tribe
 
-Мульти-агентная система для автономного решения исследовательских задач в домене
-program search / алгоритмического открытия. Один VPS (8 vCPU / 32 GB), docker-compose,
-все LLM — через hosted API за budget-guard прокси. Страховочный потолок $100 только
-по LLM-расходу (аренду сервера ты платишь сам, она не учитывается); пополнение API —
-на владельце, реальный контроль — жёсткие капы. Задачи ставятся боту свободным
-текстом (не командой).
+Автономная коллегия LLM-агентов на одном VPS (docker-compose). Домен: program
+search / алгоритмическое открытие. Агенты стартуют голыми и наращивают
+инструментарий через self-modification. Все платные LLM-вызовы — через budget-guard.
 
-## Структура репозитория
+## Сервисы
 
-```
-.
-├── docker-compose.yml        # весь стек: агенты, инфра, защитные сервисы
-├── secrets/
-│   └── credentials.env.example  # ЕДИНСТВЕННЫЙ файл секретов + владельцы (только владелец редактирует)
-├── scripts/
-│   ├── compose.sh            # docker compose с передачей файла кредов
-│   ├── kill.sh / status.sh   # kill-switch и статус через localhost-порт оркестратора
-├── configs/
-│   ├── model_routing.yaml    # роль → модель + fallback-цепочки + цены (для budget-guard)
-│   ├── budget.yaml           # лимиты: потолок $100, per-task/agent/request, пороги
-│   └── tasks/                # сид-очередь исследовательских задач (yaml на задачу)
-├── services/
-│   ├── orchestrator/         # LangGraph: очередь задач (state machine) + kill-switch API
-│   ├── budget_guard/         # FastAPI-прокси перед всеми LLM API, учёт $ в реальном времени
-│   ├── agent/                # образ агента-исследователя ("голый" ReAct-луп), N инстансов
-│   ├── arbiter/              # агент-арбитр: вердикт "решена / не решена" по критериям
-│   ├── selfmod_api/          # приём патчей от агентов → тесты в изоляции → пересборка
-│   ├── search_tool/          # контролируемый внешний поиск (allowlist + квоты запросов)
-│   ├── comms_bot/            # Telegram-бот: свободный текст, уведомления, /kill (защищённый)
-│   └── journal/              # бортовой журнал: LLM-саммари → markdown/БД, выдача через бота
-├── observability/
-│   ├── clickhouse/init/      # DDL: трейсы LLM-вызовов, git-diff'ы, аудит действий
-│   └── grafana/              # provisioning + дашборды (расход бюджета, прогресс, аномалии)
-├── eval/                     # шаг 0: мини-эвал моделей-кандидатов перед фиксацией routing
-├── workspace/                # (volume) общий git-репозиторий агентов, ветка на агента
-└── docs/
-    └── deployment.md         # разворачивание на чистом VPS с нуля
-```
+| Сервис | Роль | Ручки |
+|---|---|---|
+| orchestrator | очередь задач (state machine), распределение, kill-switch | `/v1/tasks` `/v1/kill` `/v1/status` (127.0.0.1:8001) |
+| budget-guard | единая точка ко всем LLM API: учёт $, капы, fallback | `/v1/chat` `/v1/task_cap` `/v1/budget` |
+| agent (×3) | ReAct-луп + примитивы + self-mod | Kafka consumer |
+| arbiter | вердикт solved/unsolved (воспроизводимость + качество) | Kafka consumer |
+| selfmod-api | патч → тест в изоляции → применение; защита путей | `/v1/patch` |
+| search-tool | внешний поиск (allowlist + квота) — единственный egress агентов | `/v1/search` |
+| comms-bot | Telegram: свободный текст, `/kill`, `/user` | Telegram + Kafka |
+| journal | LLM-нарратив по задаче/агенту | `/v1/journal` |
 
-## Два типа задач
+Инфра: redpanda (шина), redis (счётчики/blackboard), clickhouse+grafana (трейсы/дашборд).
+Контракты между сервисами: `docs/contracts.md`.
 
-- **Очередь дискретных задач** (исследование): state machine в оркестраторе —
-  `queued → assigned → in_progress → submitted → (solved | unsolved)`. Вердикт
-  выносит арбитр по объективным критериям; при исчерпании бюджета задачи — `unsolved`.
-- **Фоновые сервисы** (связь, журнал): долгоживущие процессы без состояния "завершено".
+## Файлы
 
-## Ключевые инварианты безопасности
+    configs/model_routing.yaml     роль → модель + цена + fallback (для budget-guard)
+    configs/budget.yaml            капы и пороги (считается только LLM)
+    configs/search_allowlist.yaml  домены + квота search-tool
+    configs/tasks/*.yaml           сид-очередь исследовательских задач
+    secrets/credentials.env        ВСЕ секреты + TELEGRAM_OWNER_IDS (chmod 600, агентам недоступен)
+    eval/                          шаг 0: мини-эвал моделей до деплоя (отдельно от рантайма)
+    observability/                 ClickHouse DDL + Grafana provisioning
+    scripts/compose.sh|kill.sh|status.sh
 
-1. Все платные LLM-вызовы — только через budget-guard (агенты не имеют ключей провайдеров).
-2. docker.sock смонтирован только в selfmod-api; агентам недоступен.
-3. Приватные папки агентов — отдельные Docker volumes.
-4. Сеть агентов — internal (без egress); внешний мир только через search-tool/budget-guard.
-5. Ресурсные лимиты (cpu/mem/pids) на каждый контейнер агента.
-6. Каждое действие агента пишется в ClickHouse с таймстампом и agent-ID.
-7. Fallback между провайдерами задан в configs/model_routing.yaml.
-8. Kill-switch: эндпоинт оркестратора + команда в Telegram-боте.
-9. **Неизменяемое ядро.** selfmod-api отклоняет любой патч агента к защищённым путям
-   (kill-switch, управление доступом `/user`, auth, креды, деньги, сам механизм
-   защиты) — см. `services/selfmod_api/selfmod/protect.py`. Всё остальное агенты
-   менять могут.
-10. **Доступ и владельцы.** Все секреты и список владельцев — в одном файле
-   `secrets/credentials.env` (git-ignored, `chmod 600`, не монтируется в контейнеры
-   агентов). Владельцы (`TELEGRAM_OWNER_IDS`) имеют полный доступ; участники
-   добавляются владельцем через `/user` (хранятся на bot-only volume). Бот проверяет
-   пользователя на каждой команде — посторонние игнорируются.
+## Примитивы агента
 
-## Управление через Telegram
+`run_python` `read_file` `write_file` `list_dir` `git_commit` `search_literature`
+`propose_self_modification` `submit_result`. Всё сверх этого агент строит себе сам
+через `propose_self_modification` (патч → тест в изоляции → применение).
 
-- **Свободный текст.** Пишешь боту обычным сообщением — LLM-роутер (дешёвая модель
-  через budget-guard) понимает намерение и делает: ставит задачу, отдаёт статус,
-  журнал, бюджет. Команды `/addtask` нет — просто опиши задачу. Slash-шорткаты
-  `/status`, `/journal`, `/budget`, `/help` оставлены как удобство.
-- **Защищённые команды (только явно, не текстом):** `/kill [target]`, `/pause`,
-  `/resume` — остановка агентов. Свободный текст «останови всех» kill НЕ вызывает —
-  роутер на это отвечает подсказкой использовать `/kill`.
-- **Только владелец:** `/user add <id>` / `/user remove <id>` / `/user list` —
-  делится доступом. Владельца из кредов через `/user` убрать нельзя (не запрёшь себя).
-- `/kill` и `/user` — в защищённом ядре, агентами не изменяемы, и изменяемый слой
-  физически не умеет kill (у него нет такой ручки). Остальное (роутер, обработчики,
-  уведомления) агенты вправе эволюционировать.
+## Инварианты
+
+1. LLM только через budget-guard; ключей провайдеров у агентов нет.
+2. docker.sock смонтирован только в selfmod-api.
+3. Приватные папки агентов — отдельные volumes.
+4. agents_net internal (без egress); наружу только через search-tool/budget-guard.
+5. Лимиты cpu/mem/pids на каждый контейнер агента.
+6. Каждое действие агента → ClickHouse (audit).
+7. Fallback между провайдерами — в model_routing.yaml.
+8. Kill-switch: orchestrator `/v1/kill` + бот `/kill` + `scripts/kill.sh`.
+9. selfmod-api отклоняет патчи к защищённым путям (kill/user/auth/креды/деньги) — `selfmod/protect.py`.
+10. Секреты и владельцы — в secrets/credentials.env; агентам недоступен.
+
+## Типы задач
+
+- Дискретные (research): `queued → assigned → in_progress → submitted → solved|unsolved`.
+- Фоновые (comms-bot, journal): долгоживущие, не «завершаются».
+
+## Bring-up
+
+    cp secrets/credentials.env.example secrets/credentials.env   # заполнить, chmod 600
+    ./scripts/compose.sh up -d
+    ./scripts/status.sh                                          # очередь / агенты / бюджет
+
+Управление — боту свободным текстом («поставь задачу: …», «статус»). Защищённые
+команды только явно: `/kill [target]`, `/user add|remove|list`.

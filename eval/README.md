@@ -1,35 +1,14 @@
-# Мини-эвал моделей (шаг 0)
+# Мини-эвал моделей (шаг 0, до деплоя)
 
-Прогоняет задачи из `tasks/*.json` на моделях из `models.yaml`, исполняет
-сгенерированный код в subprocess с таймаутом и печатает таблицу
-качество/стоимость. Результат — основание для правок `configs/model_routing.yaml`.
+Прогоняет `tasks/*.json` на моделях из `models.yaml`, исполняет сгенерированный
+код в subprocess с таймаутом, печатает таблицу качество/стоимость. Результат —
+основание для правок `configs/model_routing.yaml`. Отдельно от рантайма.
 
-## Запуск
+    python3 -m venv .venv && .venv/bin/pip install httpx anthropic pyyaml
+    export ZAI_API_KEY=... DEEPSEEK_API_KEY=... MOONSHOT_API_KEY=... ANTHROPIC_API_KEY=...
+    .venv/bin/python run_eval.py            # все модели/задачи; стоит центы
+    .venv/bin/python run_eval.py --models glm-5.2 kimi-k2.6
 
-```bash
-cd eval
-pip install httpx anthropic pyyaml
-export ZAI_API_KEY=... DEEPSEEK_API_KEY=... MOONSHOT_API_KEY=... ANTHROPIC_API_KEY=...
-python run_eval.py               # все модели, все задачи
-python run_eval.py --models glm-5.2 kimi-k2.6   # подмножество
-```
-
-Ожидаемая стоимость полного прогона (5 задач × 4 модели, ~2-4K токенов на задачу):
-**единицы центов — максимум ~$0.5**. Расширение до 20 задач — всё ещё <$2.
-
-## Формат задачи
-
-```json
-{
-  "id": "task_id",
-  "kind": "exact" | "maximize",
-  "statement": "постановка (модель видит её)",
-  "function_name": "solve",
-  "timeout_sec": 15,
-  "tests": [{"args": [...], "expected": ...}],   // kind=exact
-  "scorer": "def score(result, args): ...\n"     // kind=maximize, возвращает 0..1
-}
-```
-
-`exact` — метрика pass-rate по тестам. `maximize` — средний нормированный score
-(1.0 = известный оптимум). Добавляй задачи файлами — харнесс подхватит сам.
+Формат задачи: `{id, kind: exact|maximize, statement, function_name, timeout_sec,
+tests:[...], scorer?}`. `exact` — pass-rate по тестам; `maximize` — средний
+score из `scorer` (0..1).
