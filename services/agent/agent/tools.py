@@ -99,7 +99,7 @@ def _git_commit(ctx: ToolContext, message: str) -> str:
         ["git", "-C", str(ctx.workspace), "checkout", "-B", branch],
         ["git", "-C", str(ctx.workspace), "add", "-A"],
         ["git", "-C", str(ctx.workspace), "-c", "user.email=agent@llm-tribe",
-         "-c", "user.name", ctx.agent_id, "commit", "-m", message],
+         "-c", f"user.name={ctx.agent_id}", "commit", "-m", message],
     ]
     logs = []
     for c in cmds:
