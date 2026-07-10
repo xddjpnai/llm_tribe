@@ -28,7 +28,6 @@ class ToolContext:
     private: Path          # приватная папка агента (недоступна другим)
     search_tool_url: str
     selfmod_api_url: str
-    cpu_models_url: str
     http: httpx.Client
     audit: Callable[..., None]   # events.Bus.audit
 
@@ -124,14 +123,6 @@ def _search_literature(ctx: ToolContext, query: str, max_results: int = 5) -> st
     return json.dumps(res, ensure_ascii=False, indent=2) if res else "ничего не найдено"
 
 
-def _embed_texts(ctx: ToolContext, texts: list[str]) -> str:
-    """Бесплатный self-hosted эмбеддер (cpu-models), для RAG-индекса в приватной папке."""
-    r = ctx.http.post(f"{ctx.cpu_models_url}/v1/embed", json={"texts": texts})
-    r.raise_for_status()
-    d = r.json()
-    return f"получено {len(d.get('vectors', []))} векторов, dim={d.get('dim')}"
-
-
 def _propose_self_modification(ctx: ToolContext, description: str, diff: str,
                                target: str = "workspace") -> str:
     """Патч → тесты в изолированном раннере → применение/откат (selfmod-api).
@@ -163,7 +154,6 @@ _IMPL: dict[str, Callable[..., str]] = {
     "list_dir": _list_dir,
     "git_commit": _git_commit,
     "search_literature": _search_literature,
-    "embed_texts": _embed_texts,
     "propose_self_modification": _propose_self_modification,
     "submit_result": _submit_result,
 }
@@ -192,8 +182,6 @@ def tool_specs() -> list[dict[str, Any]]:
              "Search external literature via the controlled search-tool (allowlist + quota). "
              "Your only window to the outside world.",
              {"query": s, "max_results": {"type": "integer"}}, ["query"]),
-        spec("embed_texts", "Get embeddings from the free local model (for a RAG index).",
-             {"texts": {"type": "array", "items": s}}, ["texts"]),
         spec("propose_self_modification",
              "Propose a unified-diff patch to build yourself a new tool/module. It is tested in "
              "an isolated runner before being applied. Use this to grow your own toolkit "

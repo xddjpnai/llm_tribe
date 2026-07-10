@@ -28,9 +28,8 @@ program search / алгоритмического открытия. Один VPS
 │   ├── arbiter/              # агент-арбитр: вердикт "решена / не решена" по критериям
 │   ├── selfmod_api/          # приём патчей от агентов → тесты в изоляции → пересборка
 │   ├── search_tool/          # контролируемый внешний поиск (allowlist + квоты запросов)
-│   ├── comms_bot/            # Telegram-бот: уведомления, приём задач, пауза/kill-switch
-│   ├── journal/              # бортовой журнал: LLM-саммари → markdown/БД, выдача через бота
-│   └── cpu_models/           # self-hosted CPU: OCR + эмбеддинги (ONNX), без budget-guard
+│   ├── comms_bot/            # Telegram-бот: свободный текст, уведомления, /kill (защищённый)
+│   └── journal/              # бортовой журнал: LLM-саммари → markdown/БД, выдача через бота
 ├── observability/
 │   ├── clickhouse/init/      # DDL: трейсы LLM-вызовов, git-diff'ы, аудит действий
 │   └── grafana/              # provisioning + дашборды (расход бюджета, прогресс, аномалии)

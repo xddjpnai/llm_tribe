@@ -3,7 +3,7 @@ name: llm-tribe
 # ============================================================================
 # Сетевая модель (guard #4):
 #   agents_net  (internal) — агенты + сервисы, к которым им можно: budget-guard,
-#                            selfmod-api, search-tool, cpu-models, redis, redpanda.
+#                            selfmod-api, search-tool, redis, redpanda.
 #                            internal:true => у агентов НЕТ выхода в интернет.
 #   control_net (internal) — control-plane: оркестратор, арбитр, бот, журнал,
 #                            clickhouse, grafana + общая инфра.
@@ -32,7 +32,6 @@ volumes:
   redis_data:
   clickhouse_data:
   grafana_data:
-  cpu_models_cache:   # веса ONNX-эмбеддера / OCR, чтобы не тянуть при рестарте
 
 # ---------------------------------------------------------------------------
 # Общий шаблон агента-исследователя
@@ -46,7 +45,6 @@ x-agent-base: &agent-base
     BUDGET_GUARD_URL: http://budget-guard:8080
     SELFMOD_API_URL: http://selfmod-api:8090
     SEARCH_TOOL_URL: http://search-tool:8070
-    CPU_MODELS_URL: http://cpu-models:8060
     REDIS_URL: redis://redis:6379/0
     KAFKA_BROKERS: redpanda:9092
   # Ресурсные квоты (guard #5). Эксперименты агент гоняет внутри своего же
@@ -246,17 +244,6 @@ services:
     deploy:
       resources:
         limits: { cpus: "0.25", memory: 384M }
-
-  # ========================= self-hosted CPU-модели =========================
-  cpu-models:
-    build: ./services/cpu_models
-    restart: unless-stopped
-    networks: [agents_net, control_net]   # бесплатный сервис, budget-guard не нужен
-    volumes:
-      - cpu_models_cache:/models
-    deploy:
-      resources:
-        limits: { cpus: "2.0", memory: 4G }
 
   # ========================= агенты-исследователи =========================
   agent-1:

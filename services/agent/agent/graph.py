@@ -28,10 +28,12 @@ How you organize the work on a problem is entirely up to you — plan, generate 
 code, run experiments, review, revise, in whatever order works. Verify your results with
 run_python before submitting: a result the arbiter cannot reproduce counts as unsolved.
 
-You operate under a hard budget cap for this task. Be economical: prefer the free local
-tools (run_python, embed_texts) over literature search, and don't burn steps narrating —
-act. When you have a reproducible result and a short report, call submit_result. If you
-cannot solve it within budget, submit your best partial result honestly."""
+You operate under a hard budget cap for this task. Be economical: prefer local work
+(run_python) over literature search, which costs quota, and don't burn steps narrating —
+act. Need a helper, parser, or new tool? Build it yourself via propose_self_modification
+(patch -> tested in isolation -> applied); nothing beyond the minimal primitives is
+provided for you. When you have a reproducible result and a short report, call
+submit_result. If you cannot solve it within budget, submit your best partial honestly."""
 
 
 # NB: аннотации в этом классе — не PEP604 (`X | None`), а typing.Optional/List/Dict.

@@ -62,7 +62,7 @@ def _make_toolctx(cfg: Config, task_id: str | None, http: httpx.Client, bus: Bus
         agent_id=cfg.agent_id, task_id=task_id,
         workspace=Path(cfg.workspace), private=Path(cfg.private),
         search_tool_url=cfg.search_tool_url, selfmod_api_url=cfg.selfmod_api_url,
-        cpu_models_url=cfg.cpu_models_url, http=http, audit=bus.audit,
+        http=http, audit=bus.audit,
     )
 
 

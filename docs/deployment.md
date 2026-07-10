@@ -15,7 +15,7 @@ API оплачиваешь ты сам; в потолок они не входя
   (~30%). Наша нагрузка большую часть времени ждёт ответов внешних LLM API, а не жжёт
   CPU, поэтому переплата за выделенные ядра не оправдана.
 - **Hetzner CAX** (ARM64) — может быть ещё дешевле. Весь стек имеет arm64-сборки
-  (Redpanda, ClickHouse, Redis, Grafana, python:3.12-slim, tesseract, fastembed/onnx),
+  (Redpanda, ClickHouse, Redis, Grafana, python:3.12-slim — все имеют arm64-сборки),
   но проверь это на этапе заказа, а не считай гарантией. Если берёшь ARM — собери
   образы на самом сервере (`docker compose build` соберёт под arch хоста).
 - Альтернативы против vendor lock-in: **OVH / Scaleway / Contabo**.
@@ -35,7 +35,7 @@ adduser tribe && usermod -aG sudo tribe
 rsync --archive --chown=tribe:tribe ~/.ssh /home/tribe    # перенести ключ
 # дальше работаем под tribe: ssh tribe@<VPS_IP>
 
-# swap (страховка от упора в память под пиками OCR/эмбеддингов)
+# swap (страховка от упора в память под пиками сборок/ClickHouse)
 sudo fallocate -l 8G /swapfile && sudo chmod 600 /swapfile
 sudo mkswap /swapfile && sudo swapon /swapfile
 echo '/swapfile none swap sw 0 0' | sudo tee -a /etc/fstab

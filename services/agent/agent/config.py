@@ -12,7 +12,6 @@ class Config:
     budget_guard_url: str
     selfmod_api_url: str
     search_tool_url: str
-    cpu_models_url: str
     redis_url: str
     kafka_brokers: str
     workspace: str = "/workspace"
@@ -29,7 +28,6 @@ class Config:
             budget_guard_url=os.environ["BUDGET_GUARD_URL"],
             selfmod_api_url=os.environ["SELFMOD_API_URL"],
             search_tool_url=os.environ["SEARCH_TOOL_URL"],
-            cpu_models_url=os.environ["CPU_MODELS_URL"],
             redis_url=os.environ["REDIS_URL"],
             kafka_brokers=os.environ["KAFKA_BROKERS"],
             max_steps=int(os.environ.get("AGENT_MAX_STEPS", "60")),
