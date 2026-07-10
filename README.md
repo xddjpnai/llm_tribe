@@ -1,65 +1,56 @@
 # llm-tribe
 
-Автономная коллегия LLM-агентов на одном VPS (docker-compose). Домен: program
-search / алгоритмическое открытие. Агенты стартуют голыми и наращивают
-инструментарий через self-modification. Все платные LLM-вызовы — через budget-guard.
+Минимальное зерно самопереписывающихся LLM-агентов на одном VPS. Агенты стартуют
+голыми (примитивы + self-mod) и сами строят себе журнал, связь с оператором и приём
+задач — это их 3 стартовые задачи. Дальше решают задачи, приходящие через
+построенный ими же канал. Мы даём только РЕСУРСЫ; остальное агенты строят сами.
 
-## Сервисы
+## Предзадано (ресурсы) / защищено
 
-| Сервис | Роль | Ручки |
-|---|---|---|
-| orchestrator | очередь задач (state machine), распределение, kill-switch | `/v1/tasks` `/v1/kill` `/v1/status` (127.0.0.1:8001) |
-| budget-guard | единая точка ко всем LLM API: учёт $, капы, fallback | `/v1/chat` `/v1/task_cap` `/v1/budget` |
-| agent (×3) | ReAct-луп + примитивы + self-mod | Kafka consumer |
-| arbiter | вердикт solved/unsolved (воспроизводимость + качество) | Kafka consumer |
-| selfmod-api | патч → тест в изоляции → применение; защита путей | `/v1/patch` |
-| search-tool | внешний поиск (allowlist + квота) — единственный egress агентов | `/v1/search` |
-| comms-bot | Telegram: свободный текст, `/kill`, `/user` | Telegram + Kafka |
-| journal | LLM-нарратив по задаче/агенту | `/v1/journal` |
+Предзадано — минимальная инфра:
+- `agent` (×3) — голый ReAct-луп + примитивы + self-mod; с egress и токеном Telegram.
+- `budget-guard` — единственный доступ к LLM (ключи только здесь); клампит `max_tokens`
+  на вызов = рамка на одно действие. Общий расход отслеживает владелец сам.
+- `selfmod-api` — патч → тест в песочнице → применение. Единственный с docker.sock.
+- `redis` — общее состояние (события, очередь задач, трейсы).
+- `secrets/credentials.env` — креды и владельцы. `configs/initial_tasks.yaml` — 3 задачи.
 
-Инфра: redpanda (шина), redis (счётчики/blackboard), clickhouse+grafana (трейсы/дашборд).
-Контракты между сервисами: `docs/contracts.md`.
-
-## Файлы
-
-    configs/model_routing.yaml     роль → модель + цена + fallback (для budget-guard)
-    configs/budget.yaml            капы и пороги (считается только LLM)
-    configs/search_allowlist.yaml  домены + квота search-tool
-    configs/tasks/*.yaml           сид-очередь исследовательских задач
-    secrets/credentials.env        ВСЕ секреты + TELEGRAM_OWNER_IDS (chmod 600, агентам недоступен)
-    eval/                          шаг 0: мини-эвал моделей до деплоя (отдельно от рантайма)
-    observability/                 ClickHouse DDL + Grafana provisioning
-    scripts/compose.sh|kill.sh|status.sh
+Защищено от агентов:
+- **kill** — на уровне ХОСТА (`scripts/kill.sh` = docker stop агентов); агент не отменит.
+- **креды** — `secrets/` не монтируется агентам; selfmod отклоняет патчи к `secrets/`,
+  `budget_guard/`, `selfmod_api/` (`selfmod/protect.py`).
+- **песочница перед применением** — любой патч тестируется изолированно, чтобы агент
+  не убил себя.
 
 ## Примитивы агента
 
-`run_python` `read_file` `write_file` `list_dir` `git_commit` `search_literature`
-`propose_self_modification` `submit_result`. Всё сверх этого агент строит себе сам
-через `propose_self_modification` (патч → тест в изоляции → применение).
+`run_python` (есть сеть) · `read_file` · `write_file` · `list_dir` · `git_commit` ·
+`propose_self_modification` · `submit_result`. Всё сверх — агент пишет себе сам.
 
-## Инварианты
+## Ручки
 
-1. LLM только через budget-guard; ключей провайдеров у агентов нет.
-2. docker.sock смонтирован только в selfmod-api.
-3. Приватные папки агентов — отдельные volumes.
-4. agents_net internal (без egress); наружу только через search-tool/budget-guard.
-5. Лимиты cpu/mem/pids на каждый контейнер агента.
-6. Каждое действие агента → ClickHouse (audit).
-7. Fallback между провайдерами — в model_routing.yaml.
-8. Kill-switch: orchestrator `/v1/kill` + бот `/kill` + `scripts/kill.sh`.
-9. selfmod-api отклоняет патчи к защищённым путям (kill/user/auth/креды/деньги) — `selfmod/protect.py`.
-10. Секреты и владельцы — в secrets/credentials.env; агентам недоступен.
+- budget-guard: `POST /v1/chat` (роль→модель→fallback, клампинг max_tokens),
+  `GET /v1/budget` (накопитель + рамка на вызов).
+- selfmod-api: `POST /v1/patch` — `{agent_id, target: workspace|agent, diff}` →
+  `{accepted, tests_passed, rebuilt, logs}`; защищённые пути отклоняются.
 
-## Типы задач
+## Redis-конвенции (их использует агент-построенный журнал/канал)
 
-- Дискретные (research): `queued → assigned → in_progress → submitted → solved|unsolved`.
-- Фоновые (comms-bot, journal): долгоживущие, не «завершаются».
+- список `events` — события (online, tool-вызовы, budget_state).
+- список `llm_traces` — трейсы LLM-вызовов.
+- список `tasks` — очередь новых задач (`blpop` распределяет по агентам); сюда
+  агент-построенный приём кладёт постановки от оператора.
+- ключ `claim:<id>` — клейм стартовой задачи (чтобы не делать дважды).
+
+## Конфиги
+
+    configs/model_routing.yaml   роль → модель + цена + fallback (budget-guard)
+    configs/budget.yaml          рамка на один вызов (max_tokens/стоимость)
+    configs/initial_tasks.yaml   3 стартовые задачи
 
 ## Bring-up
 
     cp secrets/credentials.env.example secrets/credentials.env   # заполнить, chmod 600
     ./scripts/compose.sh up -d
-    ./scripts/status.sh                                          # очередь / агенты / бюджет
-
-Управление — боту свободным текстом («поставь задачу: …», «статус»). Защищённые
-команды только явно: `/kill [target]`, `/user add|remove|list`.
+    ./scripts/status.sh                    # контейнеры + накопленный расход
+    ./scripts/kill.sh [all|agent-N|resume] # защищённый kill (host-level)

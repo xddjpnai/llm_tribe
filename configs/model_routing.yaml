@@ -71,7 +71,5 @@ roles:
     fallbacks: [kimi-k2.6]
 
 # Назначение ролей агентам-инстансам (docker-compose передаёт AGENT_ROLE)
-agents:
-  agent-1: researcher
-  agent-2: researcher
-  agent-3: researcher_toolheavy
+# Роль агента задаётся через AGENT_ROLE (по умолчанию researcher). budget-guard
+# резолвит роль → модель по секции roles выше.

@@ -1,19 +1,20 @@
-"""Точка входа агента: слушает назначения задач, гоняет луп, сдаёт результат.
+"""Точка входа агента. Никакой внешней оркестрации: агент читает стартовые задачи
+из seed-файла, работает их через ReAct-луп + self-mod, затем продолжает задачами,
+которые приходят через канал, построенный им самим (конвенция: Redis-список `tasks`).
 
-Поток:
-  tasks.assignments (для моего agent_id) → run_task → tasks.submissions → арбитр.
-Плюс подписка на control.commands (пауза/стоп — kill-switch, guard #8).
+Kill — на уровне хоста (scripts/kill.sh = docker stop), в процессе не обрабатывается:
+агент не может отменить собственную остановку.
 """
 from __future__ import annotations
 
 import json
 import logging
-import os
-import signal
-import threading
+import time
 from pathlib import Path
 
 import httpx
+import redis
+import yaml
 
 from .config import Config
 from .events import Bus
@@ -24,112 +25,69 @@ from .tools import ToolContext
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
 log = logging.getLogger("agent.main")
 
-_paused = threading.Event()
-_stopped = threading.Event()
 
-
-def _control_listener(cfg: Config, bus: Bus) -> None:
-    """Реагирует на control.commands: pause/resume/stop для этого агента или для all."""
-    try:
-        from kafka import KafkaConsumer
-    except Exception as e:  # noqa: BLE001
-        log.warning("нет kafka-consumer для control: %s", e)
-        return
-    consumer = KafkaConsumer(
-        "control.commands",
-        bootstrap_servers=cfg.kafka_brokers.split(","),
-        value_deserializer=lambda v: json.loads(v.decode()),
-        group_id=f"control-{cfg.agent_id}",
-        auto_offset_reset="latest",
-    )
-    for msg in consumer:
-        cmd = msg.value
-        if cmd.get("target") not in ("all", cfg.agent_id):
-            continue
-        action = cmd.get("action")
-        log.warning("control command: %s", cmd)
-        if action == "pause":
-            _paused.set()
-        elif action == "resume":
-            _paused.clear()
-        elif action == "stop":
-            _stopped.set()
-            _paused.set()
-
-
-def _make_toolctx(cfg: Config, task_id: str | None, http: httpx.Client, bus: Bus) -> ToolContext:
+def _toolctx(cfg: Config, task_id: str | None, http: httpx.Client, bus: Bus) -> ToolContext:
     return ToolContext(
         agent_id=cfg.agent_id, task_id=task_id,
         workspace=Path(cfg.workspace), private=Path(cfg.private),
-        search_tool_url=cfg.search_tool_url, selfmod_api_url=cfg.selfmod_api_url,
-        http=http, audit=bus.audit,
+        selfmod_api_url=cfg.selfmod_api_url, http=http, audit=bus.audit,
     )
+
+
+def _load_initial(path: str) -> list[dict]:
+    try:
+        data = yaml.safe_load(open(path))
+        return data if isinstance(data, list) else []
+    except Exception as e:  # noqa: BLE001
+        log.warning("нет стартовых задач (%s): %s", path, e)
+        return []
+
+
+def _run_one(task: dict, cfg: Config, llm: LLMClient, http: httpx.Client, bus: Bus) -> None:
+    task_id = task.get("id") or task.get("task_id") or f"task-{int(time.time())}"
+    bus.audit(task_id=task_id, action="task_start", detail=(task.get("statement") or "")[:500])
+    ctx = _toolctx(cfg, task_id, http, bus)
+    try:
+        state = run_task(task, llm, ctx, bus, cfg.max_steps)
+    except Exception as e:  # noqa: BLE001
+        log.exception("задача %s упала", task_id)
+        bus.audit(task_id=task_id, action="task_error", detail=str(e))
+        return
+    bus.audit(task_id=task_id, action="task_end",
+              detail=f"stop={state.stop_reason} cost=${state.total_cost:.4f}",
+              cost_usd=state.total_cost)
 
 
 def main() -> None:
     cfg = Config.from_env()
-    clickhouse_url = os.environ.get("CLICKHOUSE_URL")
-    bus = Bus(cfg.agent_id, cfg.kafka_brokers, clickhouse_url)
+    bus = Bus(cfg.agent_id, cfg.redis_url)
     llm = LLMClient(cfg.budget_guard_url, cfg.agent_id, cfg.role)
     http = httpx.Client(timeout=60.0)
+    r = redis.from_url(cfg.redis_url, decode_responses=True)
+    bus.emit("agent", {"action": "online"})
+    log.info("agent %s online", cfg.agent_id)
 
-    signal.signal(signal.SIGTERM, lambda *_: _stopped.set())
-    threading.Thread(target=_control_listener, args=(cfg, bus), daemon=True).start()
+    # 1) Стартовые задачи (построить журнал / связь / приём задач). Клейм через
+    #    Redis SETNX, чтобы несколько агентов не делали одно и то же дважды.
+    for task in _load_initial(cfg.initial_tasks):
+        tid = task.get("id") or "seed"
+        if r.set(f"claim:{tid}", cfg.agent_id, nx=True, ex=86400):
+            log.info("agent %s взял стартовую задачу %s", cfg.agent_id, tid)
+            _run_one(task, cfg, llm, http, bus)
 
-    from kafka import KafkaConsumer
-
-    consumer = KafkaConsumer(
-        "tasks.assignments",
-        bootstrap_servers=cfg.kafka_brokers.split(","),
-        value_deserializer=lambda v: json.loads(v.decode()),
-        group_id=f"agent-{cfg.agent_id}",   # у каждого агента своя группа: видит назначения себе
-        auto_offset_reset="earliest",
-        enable_auto_commit=True,
-    )
-    log.info("agent %s (role=%s) готов, слушаю назначения", cfg.agent_id, cfg.role)
-    bus.emit("journal.events", {"action": "agent_online", "detail": f"role={cfg.role}"})
-
-    for msg in consumer:
-        if _stopped.is_set():
-            break
-        task = msg.value
-        if task.get("agent_id") != cfg.agent_id:
+    # 2) Дальше — задачи, которые агент принимает через ПОСТРОЕННЫЙ ИМ канал.
+    #    Конвенция: постановки кладутся в Redis-список `tasks` (blpop распределяет
+    #    их между агентами — один элемент одному агенту).
+    log.info("agent %s: стартовые задачи отработаны; слушаю очередь `tasks`", cfg.agent_id)
+    while True:
+        item = r.blpop("tasks", timeout=30)
+        if item is None:
             continue
-        if _paused.is_set():
-            log.info("на паузе, пропускаю назначение %s", task.get("task_id"))
-            continue
-
-        task_id = task.get("task_id")
-        log.info("взял задачу %s (cap=$%s)", task_id, task.get("cap_usd"))
-        bus.audit(task_id=task_id, action="task_start", detail=task.get("statement", "")[:500])
-        tctx = _make_toolctx(cfg, task_id, http, bus)
         try:
-            state = run_task(task, llm, tctx, bus, cfg.max_steps)
-        except Exception as e:  # noqa: BLE001
-            log.exception("задача %s упала", task_id)
-            bus.emit("tasks.submissions", {"task_id": task_id, "agent_id": cfg.agent_id,
-                     "statement": task.get("statement", ""),
-                     "summary": f"agent crashed: {e}", "artifact_ref": "", "branch": "",
-                     "failed": True})
-            continue
-
-        bus.audit(task_id=task_id, action="task_end",
-                  detail=f"stop={state.stop_reason} cost=${state.total_cost:.4f}",
-                  cost_usd=state.total_cost)
-        sub = state.submission or {"summary": f"no submission ({state.stop_reason})",
-                                   "artifact_path": "", "branch": f"agent/{cfg.agent_id}"}
-        bus.emit("tasks.submissions", {
-            "task_id": task_id, "agent_id": cfg.agent_id,
-            "statement": task.get("statement", ""),   # арбитру нужна постановка для оценки
-            "summary": sub["summary"], "artifact_ref": sub.get("artifact_path", ""),
-            "branch": sub.get("branch", ""), "stop_reason": state.stop_reason,
-            "cost_usd": round(state.total_cost, 4),
-        })
-        bus.flush()
-
-    log.info("agent %s завершается", cfg.agent_id)
-    llm.close()
-    bus.flush()
+            task = json.loads(item[1])
+        except Exception:  # noqa: BLE001
+            task = {"id": None, "statement": item[1]}
+        _run_one(task, cfg, llm, http, bus)
 
 
 if __name__ == "__main__":

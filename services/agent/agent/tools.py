@@ -26,7 +26,6 @@ class ToolContext:
     task_id: str | None
     workspace: Path        # общий git-репозиторий (ветка агента)
     private: Path          # приватная папка агента (недоступна другим)
-    search_tool_url: str
     selfmod_api_url: str
     http: httpx.Client
     audit: Callable[..., None]   # events.Bus.audit
@@ -111,18 +110,6 @@ def _git_commit(ctx: ToolContext, message: str) -> str:
     return "committed:\n" + "\n".join(l for l in logs if l)
 
 
-def _search_literature(ctx: ToolContext, query: str, max_results: int = 5) -> str:
-    r = ctx.http.post(
-        f"{ctx.search_tool_url}/v1/search",
-        json={"agent_id": ctx.agent_id, "query": query, "max_results": max_results},
-    )
-    if r.status_code == 429:
-        return "квота поиска исчерпана"
-    r.raise_for_status()
-    res = r.json().get("results", [])
-    return json.dumps(res, ensure_ascii=False, indent=2) if res else "ничего не найдено"
-
-
 def _propose_self_modification(ctx: ToolContext, description: str, diff: str,
                                target: str = "workspace") -> str:
     """Патч → тесты в изолированном раннере → применение/откат (selfmod-api).
@@ -153,7 +140,6 @@ _IMPL: dict[str, Callable[..., str]] = {
     "read_file": _read_file,
     "list_dir": _list_dir,
     "git_commit": _git_commit,
-    "search_literature": _search_literature,
     "propose_self_modification": _propose_self_modification,
     "submit_result": _submit_result,
 }
@@ -169,8 +155,10 @@ def tool_specs() -> list[dict[str, Any]]:
     s = {"type": "string"}
     return [
         spec("run_python",
-             "Execute Python 3 code in your container (stdlib + anything you installed via "
-             "self-modification). Returns exit code, stdout, stderr. Working dir is /workspace.",
+             "Execute Python 3 code in your container. Network egress is available (use "
+             "stdlib urllib etc.). To run a long-lived process (a bot, a journal loop), "
+             "launch it detached (double-fork / start_new_session) so it survives this call. "
+             "Returns exit code, stdout, stderr. Working dir is /workspace.",
              {"code": s, "timeout_sec": {"type": "integer"}}, ["code"]),
         spec("write_file", "Write a file under /workspace or /private.",
              {"path": s, "content": s}, ["path", "content"]),
@@ -178,10 +166,6 @@ def tool_specs() -> list[dict[str, Any]]:
         spec("list_dir", "List a directory under /workspace or /private.", {"path": s}, []),
         spec("git_commit", "Commit current changes to your agent branch in /workspace.",
              {"message": s}, ["message"]),
-        spec("search_literature",
-             "Search external literature via the controlled search-tool (allowlist + quota). "
-             "Your only window to the outside world.",
-             {"query": s, "max_results": {"type": "integer"}}, ["query"]),
         spec("propose_self_modification",
              "Propose a unified-diff patch to build yourself a new tool/module. It is tested in "
              "an isolated runner before being applied. Use this to grow your own toolkit "

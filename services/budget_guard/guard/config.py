@@ -41,13 +41,9 @@ class Routing:
 
 @dataclass
 class BudgetLimits:
-    total_budget_usd: float
-    per_task_default_cap_usd: float
-    per_agent_daily_cap_usd: float
-    per_request_cap_usd: float
-    warn: float
-    throttle: float
-    hard_stop: float
+    # рамка на ОДНО действие (один LLM-вызов). Общий расход отслеживает владелец.
+    max_output_tokens: int          # budget-guard клампит max_tokens вызова до этого
+    max_cost_usd_per_call: float    # порог для лога (расход уже случился — не enforce)
 
 
 def load_routing(path: str = "/configs/model_routing.yaml") -> Routing:
@@ -64,13 +60,8 @@ def load_routing(path: str = "/configs/model_routing.yaml") -> Routing:
 
 def load_budget(path: str = "/configs/budget.yaml") -> BudgetLimits:
     raw = yaml.safe_load(open(path))
-    t = raw["thresholds"]
-    llm = raw["llm"]
-    override = os.environ.get("BUDGET_TOTAL_USD")
+    pr = raw.get("per_request", {})
     return BudgetLimits(
-        total_budget_usd=float(override) if override else float(raw["total_budget_usd"]),
-        per_task_default_cap_usd=float(llm["per_task_default_cap_usd"]),
-        per_agent_daily_cap_usd=float(llm["per_agent_daily_cap_usd"]),
-        per_request_cap_usd=float(llm["per_request_cap_usd"]),
-        warn=float(t["warn"]), throttle=float(t["throttle"]), hard_stop=float(t["hard_stop"]),
+        max_output_tokens=int(pr.get("max_output_tokens", 8000)),
+        max_cost_usd_per_call=float(pr.get("max_cost_usd", 0.5)),
     )

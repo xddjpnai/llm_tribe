@@ -1,5 +1,9 @@
 #!/usr/bin/env bash
-# Быстрый снимок состояния коллегии (очередь, агенты, остаток бюджета).
+# Состояние контейнеров + расход бюджета.
 set -euo pipefail
-URL="${ORCH_URL:-http://127.0.0.1:8001}"
-curl -fsS "$URL/v1/status" | python3 -m json.tool
+cd "$(dirname "$0")/.."
+./scripts/compose.sh ps
+echo "--- budget ---"
+docker exec "$(./scripts/compose.sh ps -q budget-guard)" \
+  python3 -c "import urllib.request,json; print(json.load(urllib.request.urlopen('http://localhost:8080/v1/budget')))" \
+  2>/dev/null || echo "budget-guard недоступен"

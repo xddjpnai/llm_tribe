@@ -1,25 +1,15 @@
 #!/usr/bin/env bash
-# Общий kill-switch (guard #8): мгновенно поставить на паузу/остановить агента
-# или всех сразу. Обязательный ручной override при аномалии/перерасходе.
-#
-#   ./scripts/kill.sh stop            # остановить всех
-#   ./scripts/kill.sh pause           # пауза всех
-#   ./scripts/kill.sh resume          # снять паузу
-#   ./scripts/kill.sh stop agent-2    # остановить одного агента
-#
-# Оркестратор слушает 127.0.0.1:8001 (проброшен только на localhost VPS).
+# Kill-switch на уровне ХОСТА: docker stop контейнеров агентов. Агент не может это
+# отменить из своего контейнера — это защищённая остановка (guard).
+#   ./scripts/kill.sh            # стоп всех агентов
+#   ./scripts/kill.sh agent-2    # стоп одного
+#   ./scripts/kill.sh resume     # снова запустить всех агентов
 set -euo pipefail
-
-ACTION="${1:-stop}"
-TARGET="${2:-all}"
-URL="${ORCH_URL:-http://127.0.0.1:8001}"
-
-case "$ACTION" in
-  stop|pause|resume) ;;
-  *) echo "usage: $0 {stop|pause|resume} [all|agent-id]" >&2; exit 2 ;;
+cd "$(dirname "$0")/.."
+AGENTS="agent-1 agent-2 agent-3"
+case "${1:-all}" in
+  resume)  exec ./scripts/compose.sh start $AGENTS ;;
+  all)     exec ./scripts/compose.sh stop $AGENTS ;;
+  agent-*) exec ./scripts/compose.sh stop "$1" ;;
+  *) echo "usage: $0 [all|agent-N|resume]" >&2; exit 2 ;;
 esac
-
-curl -fsS -X POST "$URL/v1/kill" \
-  -H 'Content-Type: application/json' \
-  -d "{\"target\":\"$TARGET\",\"action\":\"$ACTION\"}"
-echo

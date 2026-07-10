@@ -9,19 +9,15 @@ from __future__ import annotations
 
 import re
 
-# Подстроки путей, которые агентам запрещено менять (kill-switch, управление
-# доступом, auth, цикл/клиент бота, деньги/ключи, сам механизм защиты, креды).
+# Подстроки путей, которые агентам запрещено менять. Kill-switch теперь на уровне
+# хоста (docker stop), поэтому здесь защищаем креды, деньги и сам механизм защиты —
+# чтобы агент не мог ни достать ключи, ни снять песочницу-гейт.
 PROTECTED_PATHS = [
-    "secrets/",                              # файл кредов
-    "credentials",                           # креды по имени
-    ".env",                                  # любые env-креды
-    "comms_bot/bot/protected.py",            # ядро auth + /kill + /user
-    "comms_bot/bot/app.py",                  # порядок проверок бота
-    "comms_bot/bot/telegram.py",             # клиент TG (риск эксфильтрации)
-    "orchestrator/orchestrator/app.py",      # бэкенд /v1/kill
-    "budget_guard/",                         # деньги и ключи провайдеров
-    "selfmod_api/",                          # сам механизм защиты
-    "authz",                                 # хранилище участников
+    "secrets/",          # файл кредов
+    "credentials",       # креды по имени
+    ".env",              # любые env-креды
+    "budget_guard/",     # деньги и ключи провайдеров
+    "selfmod_api/",      # сам механизм защиты (песочница + этот денилист)
 ]
 
 _PATH_RE = re.compile(r"^(?:\+\+\+|---)\s+(?:[ab]/)?(\S+)", re.MULTILINE)
