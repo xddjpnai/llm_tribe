@@ -47,29 +47,20 @@ models:
     price_in_per_mtok: 2.0      # интро-цена до 2026-08-31, затем 3.0
     price_out_per_mtok: 10.0    # интро-цена до 2026-08-31, затем 15.0
 
-# Роли: код сервисов запрашивает у budget-guard "роль", а не имя модели.
-# Fallback срабатывает при rate limit / 5xx / недоступности провайдера,
-# факт отката логируется в бортовой журнал (guard #7).
+# Роли: код запрашивает у budget-guard "роль", а не имя модели. Fallback
+# срабатывает при rate limit / 5xx / недоступности провайдера.
+# Агент по умолчанию использует researcher (AGENT_ROLE переопределяет); роли
+# journal/comms/routine — для сервисов, которые агент построит себе сам.
 roles:
-  researcher:                   # основной луп агента-исследователя
+  researcher:                   # основной луп агента
     primary: glm-5.2
     fallbacks: [kimi-k2.6, deepseek-v4-pro]
-  researcher_toolheavy:         # агент с акцентом на tool-use / суб-пайплайны
-    primary: kimi-k2.6
-    fallbacks: [glm-5.2, deepseek-v4-pro]
-  routine:                      # парсинг, форматирование, промежуточные шаги
+  routine:                      # дешёвые промежуточные шаги (парсинг/форматирование)
     primary: deepseek-v4-flash
     fallbacks: [kimi-k2.6]
-  arbiter:                      # закрытие задач; другой вендор, чем researcher (anti self-preference)
-    primary: claude-sonnet-5
-    fallbacks: [deepseek-v4-pro]   # тоже не совпадает с primary researcher'ов
-  journal:                      # суммаризация для бортового журнала
+  journal:                      # суммаризация для агент-построенного журнала
     primary: deepseek-v4-flash
     fallbacks: [glm-5.2]
-  comms:                        # редкие LLM-нужды telegram-бота (парафраз уведомлений)
+  comms:                        # разбор текста для агент-построенного канала связи
     primary: deepseek-v4-flash
     fallbacks: [kimi-k2.6]
-
-# Назначение ролей агентам-инстансам (docker-compose передаёт AGENT_ROLE)
-# Роль агента задаётся через AGENT_ROLE (по умолчанию researcher). budget-guard
-# резолвит роль → модель по секции roles выше.

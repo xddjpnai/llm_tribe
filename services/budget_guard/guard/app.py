@@ -1,17 +1,12 @@
-"""budget-guard: FastAPI-прокси перед всеми платными LLM API.
-
-Единственная точка входа ко всем LLM API. На каждый /v1/chat:
-  1. admission: проверка капов и state (hard_stop/task_cap/agent_cap/throttle)
-  2. fallback-цепочка роли: primary -> fallbacks (другой провайдер) при недоступности
-  3. запись LLM-стоимости в счётчик
-  4. трейс вызова + алерты порогов в Redis (агент-построенный журнал/канал их подхватит)
+"""budget-guard: единственная точка ко всем LLM API (ключи только здесь).
+На каждый /v1/chat: клампит max_tokens до рамки на один вызов, резолвит роль →
+модель, при недоступности провайдера идёт по fallback-цепочке, пишет накопительную
+стоимость. Общий потолок не enforce'ится — за ним следит владелец.
 """
 from __future__ import annotations
 
-import json
 import logging
 import os
-import time
 from typing import Any, Optional
 
 import httpx
@@ -45,19 +40,6 @@ class ChatRequest(BaseModel):
     tool_choice: Optional[str] = None
     max_tokens: int = 4096
     temperature: Optional[float] = None
-
-
-def _trace(agent_id: str, task_id: Optional[str], model: str, tin: int, tout: int,
-           cost: float, fell_back: bool) -> None:
-    """Трейс вызова в Redis-список `llm_traces` (агент-построенный журнал/дашборд
-    может его консьюмить). Внешней БД нет — её агенты строят себе сами."""
-    try:
-        _r.rpush("llm_traces", json.dumps({"ts": time.time(), "agent_id": agent_id,
-                 "task_id": task_id or "", "model": model, "input_tokens": tin,
-                 "output_tokens": tout, "cost_usd": cost, "fell_back": int(fell_back)}))
-        _r.ltrim("llm_traces", -10000, -1)
-    except Exception as e:  # noqa: BLE001
-        log.warning("trace failed: %s", e)
 
 
 @app.get("/healthz")
@@ -101,8 +83,6 @@ def chat(req: ChatRequest):
         cost = cost_usd(model, comp.input_tokens, comp.output_tokens)
         fell_back = idx > 0
         acct.record(cost)
-        _trace(req.agent_id, req.task_id, model.name, comp.input_tokens,
-               comp.output_tokens, cost, fell_back)
         if cost > limits.max_cost_usd_per_call:
             log.warning("вызов %s стоил $%.4f — выше рамки на действие", model.name, cost)
 

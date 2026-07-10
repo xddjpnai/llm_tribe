@@ -20,7 +20,7 @@ class ModelSpec:
 class ProviderSpec:
     name: str
     base_url: str
-    api_key: str             # уже разрезолвленный из env (ключи только здесь, guard #1)
+    api_key: str             # разрезолвленный из env (ключи провайдеров только здесь)
     protocol: str            # "openai" | "anthropic"
 
 

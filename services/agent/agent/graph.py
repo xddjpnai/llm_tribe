@@ -9,13 +9,12 @@
 from __future__ import annotations
 
 import json
-import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Literal, Optional
 
 from langgraph.graph import END, StateGraph
 
-from .llm import BudgetExhausted, LLMClient, Throttled
+from .llm import LLMClient
 from .tools import ToolContext, execute, tool_specs
 
 SYSTEM_PROMPT = """\
@@ -64,19 +63,10 @@ def build_graph(llm: LLMClient, tctx: ToolContext, bus, max_steps: int):
             state.done, state.stop_reason = True, "max_steps"
             return state
         state.step += 1
-        try:
-            res = llm.chat(state.messages, task_id=task_id, tools=specs)
-        except BudgetExhausted as e:
-            state.done, state.stop_reason = True, f"budget:{e.reason}"
-            return state
-        except Throttled as e:
-            time.sleep(min(e.retry_after_sec, 30))
-            state.step -= 1  # шаг не потрачен, просто подождали
-            return state
-
+        res = llm.chat(state.messages, task_id=task_id, tools=specs)
         state.total_cost += res.cost_usd
         if res.fell_back:
-            bus.emit("journal.events", {"task_id": task_id,
+            bus.emit("agent", {"task_id": task_id,
                      "action": "provider_fallback", "detail": f"ответила {res.model}"})
 
         assistant: dict[str, Any] = {"role": "assistant", "content": res.content or ""}

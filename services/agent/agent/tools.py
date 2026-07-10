@@ -173,7 +173,7 @@ def tool_specs() -> list[dict[str, Any]]:
              {"description": s, "diff": s, "target": {"type": "string", "enum": ["agent", "workspace"]}},
              ["description", "diff"]),
         spec("submit_result",
-             "Submit your final result for arbiter evaluation. Ends work on this task. "
+             "Mark this task done and record your result. Ends work on this task. "
              "Point artifact_path at the file(s) proving your result (tests, solution, report).",
              {"summary": s, "artifact_path": s}, ["summary", "artifact_path"]),
     ]
