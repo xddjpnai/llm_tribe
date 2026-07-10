@@ -32,8 +32,8 @@ AGENT_SRC = Path(os.environ.get("AGENT_BUILD_CONTEXT", "/build_context/agent"))
 WORKSPACE = Path(os.environ.get("WORKSPACE", "/workspace"))
 AGENT_UID = int(os.environ.get("AGENT_UID", "10001"))   # uid агента в его образе
 
-# подменяемо в тестах
-runner: Runner = DockerRunner()
+# подменяемо в тестах; workspace-патчи валидируются в образе с зависимостями агента
+runner: Runner = DockerRunner(validation_context=str(AGENT_SRC))
 
 
 def _chown_workspace() -> None:
