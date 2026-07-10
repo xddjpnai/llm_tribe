@@ -39,7 +39,10 @@ def _reproduce(workdir: Path, artifact: str, timeout: int):
     if p.suffix != ".py":
         return None, f"непрогоняемый артефакт ({p.suffix}) — оцениваю по описанию"
     try:
-        r = subprocess.run(["python3", "-I", str(p)], cwd=str(workdir),
+        # без -I: артефакту разрешено импортировать соседние модули из копии репо
+        # (каталог скрипта попадает в sys.path), иначе честная работа с helper-модулями
+        # выглядела бы невоспроизводимой
+        r = subprocess.run(["python3", str(p)], cwd=str(workdir),
                            capture_output=True, text=True, timeout=timeout)
     except subprocess.TimeoutExpired:
         return False, f"TIMEOUT после {timeout}s"

@@ -51,20 +51,36 @@ def _resolve(ctx: ToolContext, path: str) -> Path:
 
 # ----------------------------- реализации инструментов -----------------------------
 
+def _tail(data: Any, limit: int) -> str:
+    if data is None:
+        return ""
+    if isinstance(data, bytes):
+        data = data.decode(errors="replace")
+    return data[-limit:]
+
+
 def _run_python(ctx: ToolContext, code: str, timeout_sec: int = 30) -> str:
-    """Исполняет код в контейнере агента (песочница v1: cgroup-лимиты + internal-сеть).
-    Рабочая директория — workspace, туда же агент может писать вспомогательные модули."""
+    """Исполняет код в контейнере агента (песочница = сам контейнер: cgroup-лимиты,
+    cap_drop). Без -I: cwd (workspace) в sys.path, чтобы агент мог импортировать
+    модули, которые сам туда написал; окружение (TELEGRAM_BOT_TOKEN и пр.) наследуется.
+    Изоляции -I не давал: исполняемый код и так пишет сам агент."""
     timeout_sec = min(max(int(timeout_sec), 1), 120)
     try:
         proc = subprocess.run(
-            ["python3", "-I", "-c", code],
+            ["python3", "-c", code],
             cwd=str(ctx.workspace),
             capture_output=True,
             text=True,
             timeout=timeout_sec,
         )
-    except subprocess.TimeoutExpired:
-        return f"TIMEOUT после {timeout_sec}s"
+    except subprocess.TimeoutExpired as e:
+        # детач-процесс, унаследовавший stdout/stderr-pipe, держит их открытыми —
+        # вызов ждёт EOF до таймаута; сам детач-процесс при этом выживает
+        return (f"TIMEOUT после {timeout_sec}s. Если запускал detached-процесс: он жив, "
+                f"но redirect его stdin/stdout/stderr в файл или /dev/null — иначе "
+                f"этот вызов всегда будет висеть до таймаута.\n"
+                f"--- partial stdout ---\n{_tail(e.stdout, 4000)}\n"
+                f"--- partial stderr ---\n{_tail(e.stderr, 2000)}")
     out = (proc.stdout or "")[-8000:]
     err = (proc.stderr or "")[-4000:]
     return f"exit={proc.returncode}\n--- stdout ---\n{out}\n--- stderr ---\n{err}"
@@ -157,9 +173,14 @@ def tool_specs() -> list[dict[str, Any]]:
     return [
         spec("run_python",
              "Execute Python 3 code in your container. Network egress is available (use "
-             "stdlib urllib etc.). To run a long-lived process (a bot, a journal loop), "
-             "launch it detached (double-fork / start_new_session) so it survives this call. "
-             "Returns exit code, stdout, stderr. Working dir is /workspace.",
+             "stdlib urllib etc.). Environment variables (TELEGRAM_BOT_TOKEN, "
+             "TELEGRAM_OWNER_IDS, REDIS_URL, BUDGET_GUARD_URL...) are inherited, and "
+             "modules you wrote to /workspace are importable (cwd is on sys.path). "
+             "To run a long-lived process (a bot, a journal loop), launch it detached "
+             "(subprocess.Popen with start_new_session=True) AND redirect its "
+             "stdin/stdout/stderr to a log file or /dev/null — an inherited pipe makes "
+             "this call block until timeout. Returns exit code, stdout, stderr. "
+             "Working dir is /workspace.",
              {"code": s, "timeout_sec": {"type": "integer"}}, ["code"]),
         spec("write_file", "Write a file under /workspace or /private.",
              {"path": s, "content": s}, ["path", "content"]),
