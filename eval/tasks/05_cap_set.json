@@ -1,0 +1,13 @@
+{
+  "id": "cap_set",
+  "kind": "maximize",
+  "statement": "Cap set problem (the FunSearch benchmark domain): a cap set in F_3^n is a subset of vectors from {0,1,2}^n containing no three distinct vectors x, y, z with x + y + z = 0 (mod 3) componentwise (equivalently: no three collinear points; note x+y+z=0 includes the case of three equal vectors, which distinctness excludes). Given dimension `n`, return as large a cap set as you can as a list of tuples. You have up to 30 seconds of compute; greedy, local search, or clever constructions all allowed.",
+  "function_name": "build_cap_set",
+  "timeout_sec": 35,
+  "scorer": "def score(result, args):\n    n = args[0]\n    best = {3: 9, 4: 20, 5: 45}[n]\n    vecs = [tuple(v) for v in result]\n    if len(set(vecs)) != len(vecs):\n        return 0.0\n    if any(len(v) != n or any(c not in (0, 1, 2) for c in v) for v in vecs):\n        return 0.0\n    s = set(vecs)\n    for i, x in enumerate(vecs):\n        for y in vecs[i+1:]:\n            z = tuple((-a - b) % 3 for a, b in zip(x, y))\n            if z in s and z != x and z != y:\n                return 0.0\n    return len(vecs) / best\n",
+  "tests": [
+    {"args": [3]},
+    {"args": [4]},
+    {"args": [5]}
+  ]
+}

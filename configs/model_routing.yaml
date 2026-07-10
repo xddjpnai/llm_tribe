@@ -1,0 +1,77 @@
+# Model routing: роль → primary + fallback-цепочка (обязательно другой провайдер).
+# Цены ($/1M токенов) использует budget-guard для подсчёта расхода в реальном времени.
+#
+# ВАЖНО: цены и model id зафиксированы по состоянию на июль 2026 "на глаз" —
+# перед первым запуском:
+#   1) сверить с актуальными прайсами провайдеров,
+#   2) прогнать eval/run_eval.py (10-20 задач домена) и при необходимости
+#      поменять primary/fallback ЗДЕСЬ, не трогая код агентов.
+
+providers:
+  zai:
+    base_url: https://api.z.ai/api/paas/v4   # verify before launch
+    api_key_env: ZAI_API_KEY
+    protocol: openai            # OpenAI-совместимый chat/completions
+  deepseek:
+    base_url: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    protocol: openai
+  moonshot:
+    base_url: https://api.moonshot.ai/v1
+    api_key_env: MOONSHOT_API_KEY
+    protocol: openai
+  anthropic:
+    base_url: https://api.anthropic.com
+    api_key_env: ANTHROPIC_API_KEY
+    protocol: anthropic         # нативный Messages API (не OpenAI-шим)
+
+models:
+  glm-5.2:
+    provider: zai
+    price_in_per_mtok: 3.0      # верхняя граница вилки $1.4-3 — консервативно для бюджета
+    price_out_per_mtok: 10.0
+  deepseek-v4-flash:
+    provider: deepseek
+    price_in_per_mtok: 0.14
+    price_out_per_mtok: 0.28
+  deepseek-v4-pro:
+    provider: deepseek
+    price_in_per_mtok: 1.0      # verify: только кандидат для эвала / fallback арбитра
+    price_out_per_mtok: 4.0
+  kimi-k2.6:
+    provider: moonshot
+    price_in_per_mtok: 0.95
+    price_out_per_mtok: 4.0
+  claude-sonnet-5:
+    provider: anthropic
+    price_in_per_mtok: 2.0      # интро-цена до 2026-08-31, затем 3.0
+    price_out_per_mtok: 10.0    # интро-цена до 2026-08-31, затем 15.0
+
+# Роли: код сервисов запрашивает у budget-guard "роль", а не имя модели.
+# Fallback срабатывает при rate limit / 5xx / недоступности провайдера,
+# факт отката логируется в бортовой журнал (guard #7).
+roles:
+  researcher:                   # основной луп агента-исследователя
+    primary: glm-5.2
+    fallbacks: [kimi-k2.6, deepseek-v4-pro]
+  researcher_toolheavy:         # агент с акцентом на tool-use / суб-пайплайны
+    primary: kimi-k2.6
+    fallbacks: [glm-5.2, deepseek-v4-pro]
+  routine:                      # парсинг, форматирование, промежуточные шаги
+    primary: deepseek-v4-flash
+    fallbacks: [kimi-k2.6]
+  arbiter:                      # закрытие задач; другой вендор, чем researcher (anti self-preference)
+    primary: claude-sonnet-5
+    fallbacks: [deepseek-v4-pro]   # тоже не совпадает с primary researcher'ов
+  journal:                      # суммаризация для бортового журнала
+    primary: deepseek-v4-flash
+    fallbacks: [glm-5.2]
+  comms:                        # редкие LLM-нужды telegram-бота (парафраз уведомлений)
+    primary: deepseek-v4-flash
+    fallbacks: [kimi-k2.6]
+
+# Назначение ролей агентам-инстансам (docker-compose передаёт AGENT_ROLE)
+agents:
+  agent-1: researcher
+  agent-2: researcher
+  agent-3: researcher_toolheavy

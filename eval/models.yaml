@@ -1,0 +1,30 @@
+# Кандидаты для мини-эвала (шаг 0). Цены — для оценки стоимости эвала,
+# сверить с прайсами провайдеров перед запуском.
+candidates:
+  - name: glm-5.2
+    protocol: openai
+    base_url: https://api.z.ai/api/paas/v4
+    api_key_env: ZAI_API_KEY
+    price_in_per_mtok: 3.0
+    price_out_per_mtok: 10.0
+
+  - name: deepseek-v4-pro
+    protocol: openai
+    base_url: https://api.deepseek.com
+    api_key_env: DEEPSEEK_API_KEY
+    price_in_per_mtok: 1.0
+    price_out_per_mtok: 4.0
+
+  - name: kimi-k2.6
+    protocol: openai
+    base_url: https://api.moonshot.ai/v1
+    api_key_env: MOONSHOT_API_KEY
+    price_in_per_mtok: 0.95
+    price_out_per_mtok: 4.0
+
+  # closed-frontier бейзлайн для калибровки (и будущий арбитр)
+  - name: claude-sonnet-5
+    protocol: anthropic
+    api_key_env: ANTHROPIC_API_KEY
+    price_in_per_mtok: 2.0
+    price_out_per_mtok: 10.0

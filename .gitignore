@@ -1,0 +1,5 @@
+.env
+eval/.venv/
+eval/eval_results.json
+__pycache__/
+*.pyc

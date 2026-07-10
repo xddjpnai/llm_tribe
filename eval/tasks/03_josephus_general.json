@@ -1,0 +1,15 @@
+{
+  "id": "josephus_general",
+  "kind": "exact",
+  "statement": "Generalized Josephus problem: n people stand in a circle numbered 0..n-1. Starting from 0, every k-th person is eliminated. Return the 0-based position of the survivor. Must work for n up to 10^6 with k up to 10^6 (O(n) recurrence).",
+  "function_name": "josephus",
+  "timeout_sec": 15,
+  "tests": [
+    {"args": [1, 1], "expected": 0},
+    {"args": [5, 2], "expected": 2},
+    {"args": [7, 3], "expected": 3},
+    {"args": [10, 1], "expected": 9},
+    {"args": [1000, 7], "expected": 403},
+    {"args": [100000, 13], "expected": 91716}
+  ]
+}
