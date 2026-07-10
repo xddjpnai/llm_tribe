@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import subprocess
 import time
 from pathlib import Path
 
@@ -33,6 +35,31 @@ def _toolctx(cfg: Config, task_id: str | None, http: httpx.Client, bus: Bus) -> 
         selfmod_api_url=cfg.selfmod_api_url, sage_url=cfg.sage_url,
         http=http, audit=bus.audit,
     )
+
+
+def _ensure_workspace_git(cfg: Config, r: "redis.Redis") -> None:
+    """Общий workspace обязан быть git-репо (git_commit, ветки для sage). Обычно его
+    инициализирует selfmod-api на старте (он же чинит владельца тома); здесь —
+    страховка от гонки старта. Клейм через SETNX, чтобы не инициализировать втроём."""
+    ws = Path(cfg.workspace)
+    deadline = time.time() + 120
+    while time.time() < deadline:
+        if (ws / ".git").exists():
+            return
+        if os.access(ws, os.W_OK) and r.set("claim:workspace-git-init", cfg.agent_id,
+                                            nx=True, ex=300):
+            for cmd in (["git", "-C", str(ws), "init", "-q", "-b", "main"],
+                        ["git", "-C", str(ws), "-c", "user.email=agent@llm-tribe",
+                         "-c", f"user.name={cfg.agent_id}", "commit", "-q",
+                         "--allow-empty", "-m", "workspace init"]):
+                p = subprocess.run(cmd, capture_output=True, text=True)
+                if p.returncode != 0:
+                    log.warning("workspace git init: %s", (p.stdout + p.stderr).strip())
+                    break
+            continue
+        time.sleep(2)
+    if not (ws / ".git").exists():
+        log.warning("workspace не стал git-репо за 120s — git_commit будет падать")
 
 
 def _load_initial(path: str) -> list[dict]:
@@ -65,6 +92,7 @@ def main() -> None:
     llm = LLMClient(cfg.budget_guard_url, cfg.agent_id, cfg.role)
     http = httpx.Client(timeout=60.0)
     r = redis.from_url(cfg.redis_url, decode_responses=True)
+    _ensure_workspace_git(cfg, r)
     bus.emit("agent", {"action": "online"})
     log.info("agent %s online", cfg.agent_id)
 

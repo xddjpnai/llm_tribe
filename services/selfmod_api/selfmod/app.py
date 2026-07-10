@@ -30,9 +30,47 @@ app = FastAPI(title="selfmod-api")
 
 AGENT_SRC = Path(os.environ.get("AGENT_BUILD_CONTEXT", "/build_context/agent"))
 WORKSPACE = Path(os.environ.get("WORKSPACE", "/workspace"))
+AGENT_UID = int(os.environ.get("AGENT_UID", "10001"))   # uid агента в его образе
 
 # подменяемо в тестах
 runner: Runner = DockerRunner()
+
+
+def _chown_workspace() -> None:
+    """Всё в workspace должно принадлежать агентам (uid 10001): selfmod работает
+    от root, и созданные им файлы/git-объекты иначе заблокируют запись агента."""
+    try:
+        os.chown(WORKSPACE, AGENT_UID, AGENT_UID)
+        for root, dirs, files in os.walk(WORKSPACE):
+            for name in dirs + files:
+                try:
+                    os.lchown(os.path.join(root, name), AGENT_UID, AGENT_UID)
+                except OSError:
+                    pass
+    except OSError as e:
+        log.warning("chown workspace не удался: %s", e)
+
+
+def _init_workspace() -> None:
+    """Init-шаг вместо удалённого оркестратора: общий workspace должен быть
+    git-репозиторием (git_commit агента, ветки для sage) и принадлежать агентам —
+    named volume создаётся root-owned, потому что selfmod стартует первым."""
+    if not WORKSPACE.is_dir():
+        log.warning("workspace %s не смонтирован — init пропущен", WORKSPACE)
+        return
+    if not (WORKSPACE / ".git").exists():
+        for cmd in (["git", "-C", str(WORKSPACE), "init", "-q", "-b", "main"],
+                    ["git", "-C", str(WORKSPACE), "-c", "user.email=selfmod@llm-tribe",
+                     "-c", "user.name=selfmod", "commit", "-q", "--allow-empty",
+                     "-m", "workspace init"]):
+            r = subprocess.run(cmd, capture_output=True, text=True)
+            if r.returncode != 0:
+                log.warning("workspace git init: %s", (r.stdout + r.stderr).strip())
+                break
+    _chown_workspace()
+
+
+_init_workspace()
 
 
 class PatchRequest(BaseModel):
@@ -124,6 +162,7 @@ def patch(req: PatchRequest) -> PatchResponse:
         else:
             apply.promote(res.workdir, WORKSPACE)
             commit_log = _commit_branch(req.agent_id, f"selfmod {patch_id}: {req.description[:80]}")
+            _chown_workspace()   # файлы/git-объекты созданы root'ом — вернуть агентам
             events.journal(req.agent_id, "selfmod_applied",
                            f"{patch_id}: применён на ветку agent/{req.agent_id}")
             events.audit(req.agent_id, req.task_id or "", "selfmod_applied", patch_id)
