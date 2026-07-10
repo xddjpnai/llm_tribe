@@ -165,6 +165,8 @@ services:
     networks: [agents_net, control_net, egress_net]
     environment:
       SEARCH_API_KEY: ${SEARCH_API_KEY}
+      SEARCH_PROVIDER: ${SEARCH_PROVIDER:-brave}
+      REDIS_URL: redis://redis:6379/2
       KAFKA_BROKERS: redpanda:9092
       # allowlist источников и квоты запросов — в конфиге сервиса
     volumes:
