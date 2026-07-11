@@ -2,10 +2,18 @@
 сюда (у него нет ключей провайдеров); budget-guard резолвит роль → модель."""
 from __future__ import annotations
 
+import logging
+import time
 from dataclasses import dataclass
 from typing import Any
 
 import httpx
+
+log = logging.getLogger("agent.llm")
+
+# паузы между повторами при транзиентном сбое guard'а (рестарт, 503 «все
+# провайдеры недоступны»); без ретраев один такой сбой убивал задачу целиком
+_RETRY_DELAYS = (5, 20, 60)
 
 
 @dataclass
@@ -43,7 +51,18 @@ class LLMClient:
             body["tools"] = tools
             body["tool_choice"] = "auto"
 
-        resp = self._http.post(f"{self._url}/v1/chat", json=body)
+        for delay in (*_RETRY_DELAYS, None):
+            try:
+                resp = self._http.post(f"{self._url}/v1/chat", json=body)
+                if resp.status_code < 500:
+                    break                       # успех или 4xx (не транзиентно)
+                err = f"budget-guard HTTP {resp.status_code}: {resp.text[:200]}"
+            except httpx.TransportError as e:
+                err = f"budget-guard transport: {e}"
+            if delay is None:
+                raise RuntimeError(f"LLM недоступен после повторов: {err}")
+            log.warning("%s — повтор через %ss", err, delay)
+            time.sleep(delay)
         resp.raise_for_status()
         d = resp.json()
         return ChatResult(

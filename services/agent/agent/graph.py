@@ -65,7 +65,7 @@ def _consult_sage(tctx: ToolContext, task: dict, summary: str, artifact: str, br
     try:
         r = tctx.http.post(f"{tctx.sage_url}/v1/judge", json={
             "task_id": tctx.task_id, "statement": task.get("statement", ""),
-            "summary": summary, "artifact_ref": artifact, "branch": branch}, timeout=200)
+            "summary": summary, "artifact_ref": artifact, "branch": branch}, timeout=360)
         r.raise_for_status()
         return r.json()
     except Exception as e:  # noqa: BLE001
