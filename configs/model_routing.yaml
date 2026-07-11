@@ -53,6 +53,9 @@ roles:
   routine:                      # дешёвые промежуточные шаги (парсинг/форматирование)
     primary: deepseek-v4-flash
     fallbacks: [grok-4.3]
+  coder:                        # генерация/правка кода по спецификации (агент строит
+    primary: deepseek-v4-pro    # себе coding-модуль сам и делегирует сюда — в разы
+    fallbacks: [glm-5.2]        # дешевле, чем писать код основным researcher-лупом)
   journal:                      # суммаризация для агент-построенного журнала
     primary: deepseek-v4-flash
     fallbacks: [glm-5.2]
