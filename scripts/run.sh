@@ -35,8 +35,7 @@ if [ ! -f "$CREDS" ]; then
   echo "  TELEGRAM_OWNER_IDS — твой numeric id у @userinfobot"
   echo "  ZAI_API_KEY        — https://z.ai (API keys)"
   echo "  DEEPSEEK_API_KEY   — https://platform.deepseek.com"
-  echo "  MOONSHOT_API_KEY   — https://platform.moonshot.ai"
-  echo "  ANTHROPIC_API_KEY  — https://console.anthropic.com"
+  echo "  XAI_API_KEY        — https://console.x.ai"
   exit 1
 fi
 chmod 600 "$CREDS" || true
@@ -45,14 +44,13 @@ hint() {
   case "$1" in
     ZAI_API_KEY)        echo "ключ Z.ai: https://z.ai" ;;
     DEEPSEEK_API_KEY)   echo "ключ DeepSeek: https://platform.deepseek.com" ;;
-    MOONSHOT_API_KEY)   echo "ключ Moonshot: https://platform.moonshot.ai" ;;
-    ANTHROPIC_API_KEY)  echo "ключ Anthropic: https://console.anthropic.com" ;;
+    XAI_API_KEY)        echo "ключ xAI: https://console.x.ai" ;;
     TELEGRAM_BOT_TOKEN) echo "токен бота: @BotFather в Telegram, команда /newbot" ;;
     TELEGRAM_OWNER_IDS) echo "твой numeric Telegram id: напиши @userinfobot" ;;
   esac
 }
 missing=0
-for k in ZAI_API_KEY DEEPSEEK_API_KEY MOONSHOT_API_KEY ANTHROPIC_API_KEY \
+for k in ZAI_API_KEY DEEPSEEK_API_KEY XAI_API_KEY \
          TELEGRAM_BOT_TOKEN TELEGRAM_OWNER_IDS; do
   v="$(grep -E "^${k}=" "$CREDS" | tail -1 | cut -d= -f2- | tr -d '[:space:]')"
   if [ -z "$v" ]; then

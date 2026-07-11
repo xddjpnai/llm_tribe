@@ -2,7 +2,7 @@
 # Цены ($/1M токенов) использует budget-guard для подсчёта расхода в реальном времени.
 #
 # Сверено с официальной документацией провайдеров 2026-07-11
-# (docs.z.ai, api-docs.deepseek.com, platform.moonshot.ai, docs Anthropic).
+# (docs.z.ai, api-docs.deepseek.com, docs.x.ai).
 # Цены даны по cache-miss input; кэшированный input у всех провайдеров дешевле,
 # так что фактический расход будет НИЖЕ насчитанного — считаем консервативно.
 
@@ -15,14 +15,10 @@ providers:
     base_url: https://api.deepseek.com
     api_key_env: DEEPSEEK_API_KEY
     protocol: openai
-  moonshot:
-    base_url: https://api.moonshot.ai/v1
-    api_key_env: MOONSHOT_API_KEY
+  xai:
+    base_url: https://api.x.ai/v1
+    api_key_env: XAI_API_KEY
     protocol: openai
-  anthropic:
-    base_url: https://api.anthropic.com
-    api_key_env: ANTHROPIC_API_KEY
-    protocol: anthropic         # нативный Messages API (не OpenAI-шим)
 
 models:
   glm-5.2:
@@ -37,14 +33,14 @@ models:
     provider: deepseek
     price_in_per_mtok: 0.435
     price_out_per_mtok: 0.87
-  kimi-k2.6:
-    provider: moonshot
-    price_in_per_mtok: 0.95
-    price_out_per_mtok: 4.0
-  claude-sonnet-5:
-    provider: anthropic
-    price_in_per_mtok: 2.0      # интро-цена до 2026-08-31, затем 3.0
-    price_out_per_mtok: 10.0    # интро-цена до 2026-08-31, затем 15.0
+  grok-4.3:
+    provider: xai
+    price_in_per_mtok: 1.25
+    price_out_per_mtok: 2.5
+  grok-4.5:
+    provider: xai
+    price_in_per_mtok: 2.0
+    price_out_per_mtok: 6.0
 
 # Роли: код запрашивает у budget-guard "роль", а не имя модели. Fallback
 # срабатывает при rate limit / 5xx / недоступности провайдера.
@@ -53,16 +49,16 @@ models:
 roles:
   researcher:                   # основной луп агента
     primary: glm-5.2
-    fallbacks: [kimi-k2.6, deepseek-v4-pro]
+    fallbacks: [grok-4.3, deepseek-v4-pro]
   routine:                      # дешёвые промежуточные шаги (парсинг/форматирование)
     primary: deepseek-v4-flash
-    fallbacks: [kimi-k2.6]
+    fallbacks: [grok-4.3]
   journal:                      # суммаризация для агент-построенного журнала
     primary: deepseek-v4-flash
     fallbacks: [glm-5.2]
   comms:                        # разбор текста для агент-построенного канала связи
     primary: deepseek-v4-flash
-    fallbacks: [kimi-k2.6]
+    fallbacks: [grok-4.3]
   sage:                         # судья: другой вендор, чем агенты (не предвзят к их модели)
-    primary: claude-sonnet-5
+    primary: grok-4.5
     fallbacks: [deepseek-v4-pro]
