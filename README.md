@@ -54,7 +54,9 @@
 
 ## Bring-up
 
-    cp secrets/credentials.env.example secrets/credentials.env   # заполнить, chmod 600
-    ./scripts/compose.sh up -d
+    ./scripts/run.sh                       # одна кнопка: docker → секреты → сборка → healthy
     ./scripts/status.sh                    # контейнеры + накопленный расход
     ./scripts/kill.sh [all|agent-N|resume] # защищённый kill (host-level)
+
+Первый запуск `run.sh` создаст `secrets/credentials.env` и скажет, какие поля
+заполнить и где взять значения; второй — поднимет всё и дождётся healthy.
