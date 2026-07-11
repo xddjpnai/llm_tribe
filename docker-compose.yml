@@ -27,8 +27,14 @@ x-agent-base: &agent-base
   build: ./services/agent
   restart: unless-stopped
   networks: [net]
-  # sage тоже нужен: submit_result зовёт его для вердикта
-  depends_on: [redis, budget-guard, selfmod-api, sage]
+  # sage тоже нужен: submit_result зовёт его для вердикта. Именно healthy, не
+  # started: стартовые задачи клеймятся одноразово (SETNX), и агент, дёрнувший
+  # ещё не готовый сервис на первом старте, сжёг бы claim впустую.
+  depends_on:
+    redis: { condition: service_healthy }
+    budget-guard: { condition: service_healthy }
+    selfmod-api: { condition: service_healthy }
+    sage: { condition: service_healthy }
   environment: &agent-env
     BUDGET_GUARD_URL: http://budget-guard:8080   # единственный доступ к LLM
     SELFMOD_API_URL: http://selfmod-api:8090      # патч → песочница → применение
@@ -75,7 +81,8 @@ services:
       REDIS_URL: redis://redis:6379/1
     volumes:
       - ./configs:/configs:ro
-    depends_on: [redis]
+    depends_on:
+      redis: { condition: service_healthy }
     healthcheck:
       # python:slim без curl — проверяем /healthz через stdlib urllib
       test: ["CMD", "python3", "-c",
@@ -120,7 +127,9 @@ services:
       WORKSPACE: /workspace
     volumes:
       - workspace:/workspace:ro
-    depends_on: [budget-guard, redis]
+    depends_on:
+      budget-guard: { condition: service_healthy }
+      redis: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "python3", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8095/healthz')"]
