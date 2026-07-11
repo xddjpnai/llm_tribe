@@ -97,4 +97,7 @@ def promote(patched_src: Path, target_dir: Path) -> str:
 
 def cleanup(workdir: Path | None) -> None:
     if workdir and workdir.exists():
-        shutil.rmtree(workdir, ignore_errors=True)
+        # workdir — это <mkdtemp>/src; сносим весь mkdtemp-каталог (иначе сам
+        # каталог и patch.diff в нём копились бы в /tmp при каждом патче)
+        root = workdir.parent if workdir.parent.name.startswith("selfmod_") else workdir
+        shutil.rmtree(root, ignore_errors=True)
