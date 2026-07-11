@@ -74,7 +74,16 @@ def stage_and_apply(source_dir: Path, diff: str) -> ApplyResult:
 
 
 def promote(patched_src: Path, target_dir: Path) -> str:
-    """Переносит валидированную копию в целевой каталог (после успешных тестов)."""
+    """Переносит валидированную копию в целевой каталог (после успешных тестов).
+    Удаления тоже: без этого файл, удалённый diff'ом, оставался бы жить в целевом
+    каталоге. Список удалений берём из git самой копии (там патч уже применён) —
+    так конкурентные записи агентов в целевой каталог не попадают под снос."""
+    _, status = _run(["git", "status", "--porcelain"], cwd=str(patched_src))
+    for line in status.splitlines():
+        if line[:2].strip() == "D":
+            victim = target_dir / line[3:].strip().strip('"')
+            if victim.is_file():
+                victim.unlink()
     for item in patched_src.iterdir():
         if item.name == ".git":
             continue
