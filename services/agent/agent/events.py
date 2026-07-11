@@ -37,6 +37,3 @@ class Bus:
     def audit(self, *, task_id: str | None, action: str, detail: str, cost_usd: float = 0.0) -> None:
         self.emit("audit", {"task_id": task_id or "", "action": action,
                             "detail": detail[:2000], "cost_usd": cost_usd})
-
-    def flush(self) -> None:
-        pass

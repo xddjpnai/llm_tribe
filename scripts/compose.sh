@@ -2,7 +2,7 @@
 # Обёртка docker compose, передающая единственный файл кредов как источник
 # переменных. Используй вместо голого `docker compose`:
 #   ./scripts/compose.sh up -d
-#   ./scripts/compose.sh logs -f orchestrator
+#   ./scripts/compose.sh logs -f agent-1
 #   ./scripts/compose.sh down
 set -euo pipefail
 cd "$(dirname "$0")/.."

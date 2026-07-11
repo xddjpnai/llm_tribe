@@ -27,7 +27,8 @@ x-agent-base: &agent-base
   build: ./services/agent
   restart: unless-stopped
   networks: [net]
-  depends_on: [redis, budget-guard, selfmod-api]
+  # sage тоже нужен: submit_result зовёт его для вердикта
+  depends_on: [redis, budget-guard, selfmod-api, sage]
   environment: &agent-env
     BUDGET_GUARD_URL: http://budget-guard:8080   # единственный доступ к LLM
     SELFMOD_API_URL: http://selfmod-api:8090      # патч → песочница → применение
@@ -37,9 +38,8 @@ x-agent-base: &agent-base
     # ресурс «канал связи»: агент сам строит бота на этом токене
     TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
     TELEGRAM_OWNER_IDS: ${TELEGRAM_OWNER_IDS}
-  volumes:
-    - workspace:/workspace
-    - ./configs/initial_tasks.yaml:/seed/initial_tasks.yaml:ro
+  # NB: тома НЕ здесь — docker-compose заменяет список volumes целиком (не мержит),
+  # поэтому каждый agent-N задаёт свой полный набор (общий workspace + своя private).
   deploy:
     resources:
       limits: { cpus: "1.5", memory: 2G, pids: 256 }
@@ -53,6 +53,11 @@ services:
     restart: unless-stopped
     networks: [net]
     volumes: [redis_data:/data]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     deploy:
       resources:
         limits: { cpus: "0.5", memory: 768M }
@@ -71,6 +76,13 @@ services:
     volumes:
       - ./configs:/configs:ro
     depends_on: [redis]
+    healthcheck:
+      # python:slim без curl — проверяем /healthz через stdlib urllib
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     deploy:
       resources:
         limits: { cpus: "0.5", memory: 512M }
@@ -86,6 +98,12 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./services/agent:/build_context/agent
       - workspace:/workspace
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8090/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1G }
@@ -103,6 +121,12 @@ services:
     volumes:
       - workspace:/workspace:ro
     depends_on: [budget-guard, redis]
+    healthcheck:
+      test: ["CMD", "python3", "-c",
+             "import urllib.request; urllib.request.urlopen('http://localhost:8095/healthz')"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
     deploy:
       resources:
         limits: { cpus: "1.0", memory: 1G }
