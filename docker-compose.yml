@@ -139,6 +139,44 @@ services:
       resources:
         limits: { cpus: "1.0", memory: 1G }
 
+  # Стабильный дом для долгоживущих сервисов, которые агенты строят себе САМИ
+  # (бот-прокси, журнальный цикл): супервизит /workspace/services/boot.py и
+  # перезапускает его при падении/рестарте хоста. Мы даём только слот-«розетку»;
+  # что в нём крутится — пишут агенты в workspace. Переживает рестарты агентов.
+  runner:
+    build: ./services/agent          # тот же образ: python + httpx/redis/pyyaml
+    restart: unless-stopped
+    networks: [net]
+    working_dir: /workspace
+    command:
+      - sh
+      - -c
+      - |
+        while true; do
+          mkdir -p /workspace/services 2>/dev/null
+          if [ -f /workspace/services/boot.py ]; then
+            python3 /workspace/services/boot.py >>/workspace/services/runner.log 2>&1
+            echo "[runner] boot.py exited rc=$$? — restart in 5s" >>/workspace/services/runner.log
+          fi
+          sleep 5
+        done
+    environment:
+      BUDGET_GUARD_URL: http://budget-guard:8080
+      REDIS_URL: redis://redis:6379/0
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_OWNER_IDS: ${TELEGRAM_OWNER_IDS}
+      PYTHONUNBUFFERED: "1"
+    volumes:
+      - workspace:/workspace
+    depends_on:
+      redis: { condition: service_healthy }
+      budget-guard: { condition: service_healthy }
+    security_opt: [no-new-privileges:true]
+    cap_drop: [ALL]
+    deploy:
+      resources:
+        limits: { cpus: "0.5", memory: 512M, pids: 128 }
+
   # ------------------------------- агенты -------------------------------
   agent-1:
     <<: *agent-base

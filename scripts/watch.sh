@@ -48,9 +48,9 @@ for line in sys.stdin:
     print("%s %-8s %s%s%s  %s" % (ts, who, act, tag, c, det))
 '
 
-echo; echo "== фоновые процессы агентов (кроме главного лупа) =="
-for a in 1 2 3; do
-  docker exec "llm-tribe-agent-$a-1" python3 -c '
+echo; echo "== фоновые процессы агентов (кроме главного лупа) и runner =="
+for name in agent-1 agent-2 agent-3 runner; do
+  docker exec "llm-tribe-$name-1" python3 -c '
 import glob, pathlib, os
 me = str(os.getpid())
 seen = []
@@ -61,10 +61,10 @@ for p in glob.glob("/proc/[0-9]*/cmdline"):
         c = pathlib.Path(p).read_bytes().decode(errors="replace").replace("\x00", " ").strip()
     except OSError:
         continue
-    if c and "agent.main" not in c:
+    if c and "agent.main" not in c and not c.startswith("sh -c"):
         seen.append(c[:90])
-print("; ".join(seen) or "(только главный луп)")' 2>/dev/null \
-    | sed "s/^/agent-$a: /" || echo "agent-$a: контейнер недоступен"
+print("; ".join(seen) or "(фоновых нет)")' 2>/dev/null \
+    | sed "s/^/$name: /" || echo "$name: контейнер недоступен"
 done
 
 echo; echo "== хвосты логов в /workspace =="
