@@ -37,7 +37,12 @@ def stage_and_apply(source_dir: Path, diff: str) -> ApplyResult:
     shutil.copytree(source_dir, dst, dirs_exist_ok=True)
 
     # git нужен только как надёжный движок применения патча; если репо нет — временный
-    if not (dst / ".git").exists():
+    if (dst / ".git").exists():
+        # copytree меняет inode/stat файлов — скопированный индекс становится
+        # «протухшим», и `git apply --3way` отвергает любой diff по существующему
+        # файлу («does not match index»). Освежаем stat-информацию индекса.
+        _run(["git", "update-index", "-q", "--refresh"], cwd=str(dst))
+    else:
         for cmd in (["git", "init", "-q"],
                     ["git", "-c", "user.email=selfmod@llm-tribe", "-c", "user.name=selfmod",
                      "add", "-A"],
