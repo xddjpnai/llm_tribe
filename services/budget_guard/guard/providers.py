@@ -50,9 +50,11 @@ def _openai(http, provider, model, messages, tools, max_tokens, temperature) -> 
                       headers={"Authorization": f"Bearer {provider.api_key}"}, json=body)
     except httpx.HTTPError as e:
         raise ProviderError(f"{provider.name} network: {e}") from e
-    if r.status_code in (429, 500, 502, 503, 529):
-        raise ProviderError(f"{provider.name} status {r.status_code}")
-    r.raise_for_status()
+    # ЛЮБОЙ не-2xx = сигнал fallback (401 при истёкшем ключе, 400/404 при кривой
+    # модели, 429/5xx при недоступности). Иначе один плохой провайдер уронил бы
+    # весь /v1/chat в 500 вместо перехода на следующую модель в цепочке.
+    if r.status_code >= 400:
+        raise ProviderError(f"{provider.name} status {r.status_code}: {r.text[:200]}")
     d = r.json()
     msg = d["choices"][0]["message"]
     usage = d.get("usage", {})
@@ -87,9 +89,8 @@ def _anthropic(http, provider, model, messages, tools, max_tokens) -> Completion
                                "anthropic-version": "2023-06-01"}, json=body)
     except httpx.HTTPError as e:
         raise ProviderError(f"{provider.name} network: {e}") from e
-    if r.status_code in (429, 500, 502, 503, 529):
-        raise ProviderError(f"{provider.name} status {r.status_code}")
-    r.raise_for_status()
+    if r.status_code >= 400:   # любой не-2xx = fallback, а не 500 (см. _openai)
+        raise ProviderError(f"{provider.name} status {r.status_code}: {r.text[:200]}")
     d = r.json()
     text = "".join(b.get("text", "") for b in d.get("content", []) if b.get("type") == "text")
     usage = d.get("usage", {})
