@@ -142,6 +142,23 @@ def _propose_self_modification(ctx: ToolContext, description: str, diff: str,
             f"rebuilt={d.get('rebuilt')}\nlogs:\n{(d.get('logs') or '')[:3000]}")
 
 
+def _deploy_self(ctx: ToolContext, candidate_image: str, health_timeout: int = 90) -> str:
+    """Развернуть собранный кандидат-образ на СВОЙ работающий контейнер (свап с
+    откатом). candidate_image берётся из ответа propose_self_modification(target=agent).
+    Внимание: успешный деплой перезапускает тебя — текущий процесс умрёт, новый
+    поднимется на новом образе; твои detached-процессы тоже перезапустятся."""
+    r = ctx.http.post(
+        f"{ctx.selfmod_api_url}/v1/deploy",
+        json={"agent_id": ctx.agent_id, "candidate_image": candidate_image,
+              "health_timeout": int(health_timeout)},
+        timeout=600,
+    )
+    r.raise_for_status()
+    d = r.json()
+    return (f"deployed={d.get('deployed')} rolled_back={d.get('rolled_back')}\n"
+            f"{d.get('logs', '')}")
+
+
 def _submit_result(ctx: ToolContext, summary: str, artifact_path: str) -> str:
     """Завершает работу над задачей и отправляет результат арбитру.
     Реальную отправку в шину делает graph-луп, увидев вызов этого инструмента."""
@@ -157,6 +174,7 @@ _IMPL: dict[str, Callable[..., str]] = {
     "list_dir": _list_dir,
     "git_commit": _git_commit,
     "propose_self_modification": _propose_self_modification,
+    "deploy_self": _deploy_self,
     "submit_result": _submit_result,
 }
 
@@ -190,9 +208,18 @@ def tool_specs() -> list[dict[str, Any]]:
         spec("propose_self_modification",
              "Propose a unified-diff patch to build yourself a new tool/module. It is tested in "
              "an isolated runner before being applied. Use this to grow your own toolkit "
-             "instead of expecting helpers to be provided.",
+             "instead of expecting helpers to be provided. With target=agent it patches your "
+             "OWN source (services/agent) and returns a validated candidate_image WITHOUT "
+             "deploying it — call deploy_self with that image to actually become it.",
              {"description": s, "diff": s, "target": {"type": "string", "enum": ["agent", "workspace"]}},
              ["description", "diff"]),
+        spec("deploy_self",
+             "Deploy a candidate image (from a target=agent self-modification) onto your own "
+             "running container, with automatic rollback: selfmod swaps your container to the "
+             "new image and waits for your new code to come online; if it doesn't, it rolls "
+             "back to the previous image. This RESTARTS you — the current run ends. Use only "
+             "after propose_self_modification(target=agent) returned a candidate_image.",
+             {"candidate_image": s, "health_timeout": {"type": "integer"}}, ["candidate_image"]),
         spec("submit_result",
              "Mark this task done and record your result. Ends work on this task. "
              "Point artifact_path at the file(s) proving your result (tests, solution, report).",

@@ -20,7 +20,7 @@ from typing import Optional
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from . import apply, events, protect
+from . import apply, deploy, events, protect
 from .isolate import DockerRunner, Runner
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(levelname)s %(message)s")
@@ -31,6 +31,14 @@ app = FastAPI(title="selfmod-api")
 AGENT_SRC = Path(os.environ.get("AGENT_BUILD_CONTEXT", "/build_context/agent"))
 WORKSPACE = Path(os.environ.get("WORKSPACE", "/workspace"))
 AGENT_UID = int(os.environ.get("AGENT_UID", "10001"))   # uid агента в его образе
+
+# Redis нужен, чтобы деплой ждал события online нового кода (health-сигнал свапа)
+_REDIS_URL = os.environ.get("REDIS_URL")
+try:
+    import redis as _redis_mod  # noqa: PLC0415
+    _redis = _redis_mod.from_url(_REDIS_URL, decode_responses=True) if _REDIS_URL else None
+except Exception:  # noqa: BLE001 — без redis деплой просто не сможет ждать online
+    _redis = None
 
 # подменяемо в тестах; workspace-патчи валидируются в образе с зависимостями агента
 runner: Runner = DockerRunner(validation_context=str(AGENT_SRC))
@@ -102,9 +110,47 @@ def _commit_branch(agent_id: str, message: str) -> str:
     return f"committed to {branch}"
 
 
+class DeployRequest(BaseModel):
+    agent_id: str
+    candidate_image: str
+    health_timeout: int = 90
+
+
+class DeployResponse(BaseModel):
+    deployed: bool
+    rolled_back: bool
+    logs: str
+
+
 @app.get("/healthz")
 def healthz() -> dict:
     return {"status": "ok"}
+
+
+@app.post("/v1/deploy", response_model=DeployResponse)
+def deploy_ep(req: DeployRequest) -> DeployResponse:
+    """Свап работающего контейнера агента на собранный им кандидат-образ, с откатом.
+    Разворачивать можно ТОЛЬКО кандидат, собранный для ЭТОГО же агента (тег с его
+    id), и только на его собственный контейнер — чужой сервис не тронуть."""
+    expected = f"llm-tribe/agent:candidate-{req.agent_id}-"
+    if not req.candidate_image.startswith(expected):
+        events.audit(req.agent_id, "", "deploy_rejected", req.candidate_image)
+        return DeployResponse(deployed=False, rolled_back=False,
+                              logs=f"образ '{req.candidate_image}' не является кандидатом "
+                                   f"этого агента (ожидался префикс '{expected}')")
+    events.journal(req.agent_id, "deploy_start", req.candidate_image)
+    try:
+        import docker  # noqa: PLC0415
+        res = deploy.redeploy(docker.from_env(), _redis, req.agent_id,
+                              req.candidate_image, req.health_timeout)
+    except Exception as e:  # noqa: BLE001
+        log.exception("деплой %s упал", req.agent_id)
+        return DeployResponse(deployed=False, rolled_back=False,
+                              logs=f"deploy error: {type(e).__name__}: {e}")
+    events.journal(req.agent_id, "deploy_done" if res.ok else "deploy_rolledback", res.logs)
+    events.audit(req.agent_id, "", "deploy_result",
+                 f"deployed={res.ok} rolled_back={res.rolled_back}")
+    return DeployResponse(deployed=res.ok, rolled_back=res.rolled_back, logs=res.logs)
 
 
 @app.post("/v1/patch", response_model=PatchResponse)

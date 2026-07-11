@@ -100,10 +100,14 @@ services:
     build: ./services/selfmod_api
     restart: unless-stopped
     networks: [net]
+    environment:
+      REDIS_URL: redis://redis:6379/0   # деплой ждёт события online нового кода
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./services/agent:/build_context/agent
       - workspace:/workspace
+    depends_on:
+      redis: { condition: service_healthy }
     healthcheck:
       test: ["CMD", "python3", "-c",
              "import urllib.request; urllib.request.urlopen('http://localhost:8090/healthz')"]
